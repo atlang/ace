@@ -14,12 +14,13 @@ class Error(Error):
 ## Platform
 #############################################################################
 class Platform(Platform):
-    """Represents an OpenCL platform.
+    """An OpenCL platform.
     
     In OpenCL, a platform consists of the compilers and other tools that 
     implement the OpenCL interface. For example, on OS X 10.6+, the `Apple` 
-    platform supports OpenCL. On other systems, NVidia, AMD and IBM provide 
-    platforms for their respective devices.
+    platform implements OpenCL for all GPUs and CPUs that Apple computers 
+    support. On other systems, NVidia, AMD, Intel, IBM and others provide 
+    platforms that support their respective devices.
     """
     @classmethod
     def get_platforms(cls):
