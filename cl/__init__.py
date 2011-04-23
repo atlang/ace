@@ -4,7 +4,7 @@
 from pyopencl import *
 import pyopencl as _cl
 import numpy as _numpy
-import cypy as _py
+import cypy
 
 class Error(Error):
     """Base class for errors in ``cl``. Extends :class:`pyopencl.Error`."""
@@ -42,7 +42,7 @@ class Platform(Platform):
         """
         if hasattr(idx, 'get_devices'): # Already a Platform
             return idx
-        elif _py.is_numeric(idx):
+        elif cypy.is_numeric(idx):
             return cls.get_platforms()[idx]
         else:
             raise Error("Invalid idx provided to Platform.get.")
@@ -167,7 +167,7 @@ class Device(Device):
         """Returns the maximum number of work items that can be enqueued on 
         this device.
         """
-        return _py.prod(self.max_work_item_sizes)
+        return cypy.prod(self.max_work_item_sizes)
     
     _cl.Device.max_work_items = max_work_items 
     
@@ -244,7 +244,7 @@ class Context(Context):
             One or more :class:`mem_flags`. Defaults to 
             ``mem_flags.READ_WRITE``.            
         """
-        if _py.is_int_like(shape):
+        if cypy.is_int_like(shape):
             shape = (shape,)
         elif shape is None:
             shape = Buffer.infer_shape(like)
@@ -331,7 +331,7 @@ class Context(Context):
         
         If ``queue`` is not specified, uses the default queue.
         """
-        if _py.is_int_like(shape):
+        if cypy.is_int_like(shape):
             shape = (shape,)
         elif shape is None:
             try:
@@ -379,7 +379,7 @@ class Context(Context):
         The compiler options can be provided as a single string or a sequence 
         of strings.
         """
-        if _py.is_iterable(options):
+        if cypy.is_iterable(options):
             options = " ".join(options)
         return Program(self, source).build(options)
 _cl.Context = Context
@@ -434,7 +434,7 @@ class Buffer(Buffer):
         It is highly recommended that you use the methods available in
         :class:`Context` to create buffers rather than doing so explicitly.
         """
-        if _py.is_int_like(shape):
+        if cypy.is_int_like(shape):
             shape = (shape,)
         if hostbuf is not None:
             if shape is None:
@@ -448,7 +448,7 @@ class Buffer(Buffer):
                     order = "C"
             flags |= mem_flags.USE_HOST_PTR
         size = cl_dtype.sizeof_for(ctx.device)
-        size *= _py.prod(shape)
+        size *= cypy.prod(shape)
         if size <= 0:
             raise Error("Invalid buffer size %s." % str(size))
         assert size > 0
@@ -469,7 +469,7 @@ class Buffer(Buffer):
         """The length of the memory object, including all dimensions."""
         return self.size/self.cl_dtype.sizeof_for(self.context.device)
 
-    @_py.lazy(property)
+    @cypy.lazy(property)
     def cl_type(self):
         """A :class:`GlobalPtrType` descriptor for this Buffer."""
         if self.constant:
@@ -598,7 +598,7 @@ class LocalMemory(LocalMemory):
 
         See :meth:`Buffer.shaped` for an explanation of the arguments.
         """
-        size = cl_dtype.sizeof_for(ctx.device) * _py.prod(shape)
+        size = cl_dtype.sizeof_for(ctx.device) * cypy.prod(shape)
         if size <= 0:
             raise Error("Invalid local memory size: %s." % str(size))
         local_mem = LocalMemory(size)
@@ -619,7 +619,7 @@ class LocalMemory(LocalMemory):
     cl_dtype = None
     """A :class:`Type` descriptor for the *elements* of the memory object."""
     
-    @_py.lazy(property)
+    @cypy.lazy(property)
     def cl_type(self):
         """Returns a :class:`LocalPtrType` descriptor for this object."""
         return self.cl_dtype.local_ptr    
@@ -693,7 +693,7 @@ class Kernel(Kernel):
             args = args[1:]
 
         global_size = args[0]
-        if not _py.is_iterable(global_size):
+        if not cypy.is_iterable(global_size):
             try:
                 global_size = global_size.shape
                 args = args[1:]
@@ -723,7 +723,7 @@ class Kernel(Kernel):
     
     @classmethod
     def convert_arg(cls, arg):
-        if _py.is_int_like(arg):
+        if cypy.is_int_like(arg):
             if cl_int.min <= arg <= cl_int.max:
                 yield _numpy.int32(arg)
             elif cl_long.min <= arg <= cl_long.max:
@@ -731,7 +731,7 @@ class Kernel(Kernel):
             else:
                 raise Error("Integer-like number is out of range of long: %s" %
                             str(arg))
-        elif _py.is_float_like(arg):
+        elif cypy.is_float_like(arg):
             if cl_float.min <= arg <= cl_float.max:
                 yield _numpy.float32(arg)
             elif cl_float.min <= arg <= cl_float.max:
@@ -746,7 +746,7 @@ _cl.Kernel = Kernel
 #############################################################################
 ## Versions
 #############################################################################
-OpenCL_1_0 = _py.Version("OpenCL", [("major", 1), ("minor", 0)])
+OpenCL_1_0 = cypy.Version("OpenCL", [("major", 1), ("minor", 0)])
 """A :class:`Version <cypy.Version>` descriptor representing OpenCL version 1.0."""
 
 #############################################################################
@@ -765,7 +765,7 @@ class Extension(object):
     def pragma_str(self):
         """Returns the pragma needed to enable this extension."""
         return "\n#pragma extension %s : enable\n" % self.name
-_py.interned(Extension)
+cypy.interned(Extension)
 
 cl_khr_fp64 = Extension("cl_khr_fp64")
 """Standard 64-bit floating point extension.
@@ -847,7 +847,7 @@ cl_khr_3d_image_writes = Extension("cl_khr_3d_image_writes")
 *See section 9.8 in the spec.*
 """
 
-khr_extensions = _py.cons.ed(int32_atomics_extensions,                           #@UndefinedVariable
+khr_extensions = cypy.cons.ed(int32_atomics_extensions,                           #@UndefinedVariable
                              int64_atomics_extensions, 
                              (cl_khr_byte_addressable_store,))
 
@@ -910,7 +910,7 @@ class Type(object):
         else:
             return device.address_bits / 8
         
-    @_py.lazy(property)
+    @cypy.lazy(property)
     def global_ptr(self):
         """The :class:`GlobalPtrType` corresponding to this type."""
         name = GlobalPtrType.address_space + " " + self.name + "*"
@@ -918,7 +918,7 @@ class Type(object):
         obj.target_type = self
         return obj
     
-    @_py.lazy(property)
+    @cypy.lazy(property)
     def local_ptr(self):
         """The :class:`LocalPtrType` corresponding to this type."""
         name = LocalPtrType.address_space + " " + self.name + "*"
@@ -926,7 +926,7 @@ class Type(object):
         obj.target_type = self
         return obj
     
-    @_py.lazy(property)
+    @cypy.lazy(property)
     def constant_ptr(self):
         """The :class:`ConstantPtrType` corresponding to this type."""
         name = ConstantPtrType.address_space + " " + self.name + "*"
@@ -934,14 +934,14 @@ class Type(object):
         obj.target_type = self
         return obj
     
-    @_py.lazy(property)
+    @cypy.lazy(property)
     def private_ptr(self):
         """The :class:`PrivatePtrType` corresponding to this type."""
         name = PrivatePtrType.address_space + " " + self.name + "*"
         obj = PrivatePtrType(name)
         obj.target_type = self
         return obj
-_py.interned(Type)
+cypy.interned(Type)
 type_names = { }
 
 class BuiltinType(Type):
@@ -1237,11 +1237,11 @@ class PtrType(Type):
     short_address_space = None
     """The short name of the address space, e.g. "global"."""
     
-    @_py.lazy(property)
+    @cypy.lazy(property)
     def suffix_name(self):
         return "_" + self.short_address_space + self.target_type.name + "ptr" + "_"
     
-    @_py.lazy(property)
+    @cypy.lazy(property)
     def version(self):
         return self.target_type.version
     
@@ -1277,15 +1277,15 @@ class VectorType(BuiltinType):
     base_type = None
     """The base scalar type for this vector type."""
     
-    @_py.lazy(property)
+    @cypy.lazy(property)
     def version(self):
         return self.base_type.version
     
-    @_py.lazy(property)
+    @cypy.lazy(property)
     def min_sizeof(self):
         return self.base_type.min_sizeof * self.n
     
-    @_py.lazy(property)
+    @cypy.lazy(property)
     def max_sizeof(self):
         return self.base_type.max_sizeof * self.n
 
@@ -1320,7 +1320,7 @@ cl_sampler_t = sampler_t = Type("sampler_t")
 
 def to_cl_string_literal(value):
     """Produces an OpenCL string literal from a string value."""
-    return '"%s"' % _py.string_escape(value)
+    return '"%s"' % cypy.string_escape(value)
 
 def to_cl_numeric_literal(value, unsigned=False, report_type=False):
     """Produces an OpenCL numeric literal from a number-like value heuristically.
@@ -1382,7 +1382,7 @@ def to_cl_numeric_type(value, unsigned=False):
         if value is True or value is False:
             value = int(value)
             
-        if _py.is_int_like(value):
+        if cypy.is_int_like(value):
             value = long(value)
             if unsigned:
                 assert value > 0
@@ -1398,7 +1398,7 @@ def to_cl_numeric_type(value, unsigned=False):
                     assert cl_long.min <= value <= cl_long.max
                     return cl_long
         else:
-            assert _py.is_float_like(value)
+            assert cypy.is_float_like(value)
             value = float(value)
             if cl_float.min <= value <= cl_float.max:
                 return cl_float
@@ -1414,7 +1414,7 @@ def infer_cl_type(value):
         try:
             return to_cl_type[value.dtype]
         except AttributeError:
-            if _py.is_numeric(value):
+            if cypy.is_numeric(value):
                 return to_cl_numeric_type(value, False)
             elif isinstance(value, basestring):
                 return cl_char.private_ptr
