@@ -6,9 +6,6 @@ import cypy.astx as astx
 version = cypy.Version("cl.oquence", (("Major", 1), ("Minor", 0)), "alpha")
 """The current :class:`Version <cypy.Version>` of cl.oquence (1.0 alpha)."""
 
-class Error(Exception):
-    """Base class for errors in cl.oquence."""
-    
 def fn(decl):
     """Create a :class:`generic cl.oquence function <GenericFn>` from a 
     Python function declaration.
@@ -89,7 +86,7 @@ class GenericFn(object):
         - Variable names are extracted
         
         """
-        visitor = self._visitor = GenericFnVisitor()
+        visitor = self._visitor = internals.GenericFnVisitor()
         return visitor.visit(self.ast)
     
     @cypy.lazy(property)
@@ -129,6 +126,7 @@ class ConcreteFn(object):
     def __init__(self, generic_fn, arg_types):
         self.generic_fn = generic_fn
         self.arg_types = arg_types
+        self.arg_map = cypy.frozendict(zip(generic_fn.arguments, arg_types))
         
     @cypy.setonce(property)
     def generic_fn(self):
@@ -152,7 +150,7 @@ class ConcreteFn(object):
     def typed_ast(self):
         """The abstract syntax tree for this function, annotated with a fully 
         resolved clq_type attributes on each expression."""
-        visitor = self._visitor = ConcreteFnVisitor()
+        visitor = self._visitor = internals.ConcreteFnVisitor(self)
         return visitor.visit(self._generic_fn.annotated_ast)
     
     @cypy.lazy(property)
@@ -191,6 +189,30 @@ class Type(object):
     def __repr__(self):
         return str(self)
     
+class VoidType(Type):
+    """The type of :obj:`void`."""
+    def __init__(self):
+        Type.__init__(self, "void")
+cypy.interned(VoidType)
+
+void = VoidType()
+"""Singleton instance of VoidType."""
+    
+class GenericFnType(Type):
+    """Each generic function uniquely inhabits an instance of GenericFnType."""
+    def __init__(self, generic_fn):
+        Type.__init__(self, generic_fn.name)
+        self.generic_fn = generic_fn
+        
+class ConcreteFnType(Type):
+    """Each concrete function uniquely inhabits an instance of ConcreteFnType."""
+    def __init__(self, concrete_fn):
+        Type.__init__(self, concrete_fn.name)
+        self.concrete_fn = concrete_fn
+        
+class Error(Exception):
+    """Base class for errors in cl.oquence."""
+    
 class InvalidOperationError(Error):
     """Raised if an invalid operation is observed in a generic function."""
     def __init__(self, message, node):
@@ -208,5 +230,16 @@ def is_valid_varname(id):
     # TODO: this needs to cover more things
     return True
 
-# TODO: Don't do this
-from internals import *
+class ProgramItem(object):
+    """Represents a top-level item in the target program."""
+    def __init__(self, name, code):
+        self.name = name
+        self.code = code
+        
+    name = None
+    """The name of the item, if it has a name, or None."""
+    
+    code = None
+    """The source code associated with this item."""
+
+import internals

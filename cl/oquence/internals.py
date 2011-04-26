@@ -51,7 +51,7 @@ class GenericFnVisitor(_ast.NodeVisitor):
         body = [ self.visit(stmt) for stmt in n.body ]
         return_type = self.return_type
         if return_type is None:
-            return_type = cl.cl_void
+            return_type = void
 
         # return a copy of the root node with all the information as 
         # attributes
@@ -550,11 +550,11 @@ class NameURT(UnresolvedType):
         
         try:
             # is it an argument?
-            return visitor.arguments[name]
+            return visitor.concrete_fn.arg_map[name]
         except KeyError:
             # no? then it must be a local variable
             try:
-                var = visitor.local_variables[name]
+                var = visitor._resolve_type(visitor.concrete_fn.generic_fn.local_variables[name])
             except KeyError:
                 raise ConcreteTypeError("Invalid name." % name)
             
@@ -852,6 +852,44 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
     
     These types are provided in the clq_type attribute.
     """
+    def __init__(self, concrete_fn):
+        self.concrete_fn = concrete_fn
+        
+        # used to provide base case for resolving multiple assignments
+        self._resolving_name = None
+        
+    def visit_FunctionDef(self, generic_fn):
+        self.generic_fn = generic_fn
+        self.modifiers = [ ]
+        self.program_items = [ ]
+        
+        self.return_type = self._resolve_type(generic_fn.return_type)
+        self.args = self.visit(generic_fn.args)
+        body = [ ]
+        self.body_code = [ ]
+        for stmt in generic_fn.body:
+            body.append(self.visit(stmt))
+            
+        self.declarations = self._generate_declarations()
+        name = self.name = self._generate_name()
+        self.program_item = self._generate_program_item()
+        self.program_items.append(self.program_item)
+        
+        return astx.copy_node(generic_fn,
+            generic_fn=generic_fn,
+            
+            name=name,
+            args=self.args,
+            body=body,
+            body_code=self.body_code,
+            
+            return_type=self.return_type,
+            modifiers=self.modifiers,
+            
+            program_items=self.program_items,
+            program_item=self.program_item
+        )
+        
     def _resolve_type(self, unresolved_type):
         """Resolves an unresolved type."""
         if isinstance(unresolved_type, Type):
@@ -863,40 +901,32 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
                 raise Error("Unexpected unresolved type.")
             else:
                 return _resolve(self)
+
+    def _observe(self, clq_type):
+        # Call a method when a clq_type is observed
+        try:
+            _observe = clq_type._observe
+        except AttributeError: pass
+        else:
+            _observe(self)
+        
+        return clq_type
+        
+    tab = staticmethod(cg.CG.tab)
+    untab = staticmethod(cg.CG.untab)
+            
+    def _generate_name(self):
+        # TODO
+        return self.generic_fn.name    
+      
+    def _generate_declarations(self):
+        local_variables = self.generic_fn.local_variables
+        def _generate():
+            for name, unresolved_type in local_variables.iteritems():
+                clq_type = self._resolve_type(unresolved_type)
+                yield (clq_type.name, " ", name, ";\n")
+        return tuple(_generate())
     
-    def visit_FunctionDef(self, fn):
-        self.fn = fn
-        self.modifiers = [ ]
-        self.program_items = [ ]
-        self.local_variables = { }
-        
-        self.args = args = self.visit(n.args)
-        body = [ ]
-        self.body_code = body_code = [ ]
-        for stmt in fn.body:
-            body.append(self.visit(stmt))
-            
-        self.return_type = return_type = self._resolve_type(fn.return_type)
-        name = self.name
-        
-        program_item = self._generate_program_item()
-        
-        return astx.copy_node(n,
-            generic_fn=fn,
-            
-            name=name,
-            args=args,
-            body=body,
-            body_code=body_code,
-            
-            local_variables=local_variables,
-            return_type=return_type,
-            modifiers=modifiers,
-            
-            program_items=program_items,
-            program_item=program_item
-        )
-        
     def visit_arguments(self, n):
         return _ast.arguments(
             args=[self.visit(arg) for arg in n.args],
@@ -905,6 +935,20 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
             defaults=[]
         )
         
+    def _generate_program_item(self):
+        g = cg.CG()
+        g.append(cypy.join(cypy.cons(self.modifiers, (self.return_type.name,)), " "))
+        g.append((" ", self.name, "("))
+        g.append(cypy.join((arg.code for arg in self.args.args), ", "))
+        g.append((") {\n", self.tab))
+        g.append(cypy.join(self.declarations, "\n"))
+        g.append(self.body_code)
+        g.append((self.untab, "\n}\n"))
+        return ProgramItem(self.name, g.code)
+
+    #########################################################################
+    ## Statements
+    ##########################################################################
     def visit_Return(self, n):
         if self.return_type is void:
             self.body_code.append("return;\n")
@@ -924,19 +968,22 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
             try:
                 _generate = target_type._generate_Assign
             except AttributeError:
-                raise InvalidOperationError("Type does not support assignment.")                
+                raise InvalidOperationError(
+                    "Type does not support assignment.")                
         elif isinstance(target, _ast.Attribute):
             obj_type = self._resolve_type(target.value.unresolved_type)
             try:
                 _generate = obj_type._generate_Assign_Attr
             except AttributeError:
-                raise InvalidOperationError("Type does not support attribute assignment.")
+                raise InvalidOperationError(
+                    "Type does not support attribute assignment.")
         elif isinstance(target, _ast.Subscript):
             arr_type = self._resolve_type(target.value.unresolved_type)
             try:
                 _generate = arr_type._generate_Assign_Subscript
             except AttributeError:
-                raise InvalidOperationError("Type does not support subscript assignment.")
+                raise InvalidOperationError(
+                    "Type does not support subscript assignment.")
         
         _generate(self, target, value)
         
@@ -955,19 +1002,22 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
             try:
                 _generate = target_type._generate_AugAssign
             except AttributeError:
-                raise InvalidOperationError("Type does not support augmented assignment.")
+                raise InvalidOperationError(
+                    "Type does not support augmented assignment.")
         elif isinstance(target, _ast.Attribute):
             obj_type = self._resolve_type(target.value.unresolved_type)
             try:
                 _generate = target_type._generate_AugAssign_Attr
             except AttributeError:
-                raise InvalidOperationError("Type does not support augmented attribute assignment.")
+                raise InvalidOperationError(
+                    "Type does not support augmented attribute assignment.")
         elif isinstance(target, _ast.Subscript):
             arr_type = self._resolve_type(target.value.unresolved_type)
             try:
                 _generate = target_type._generate_AugAssign_Subscript
             except AttributeError:
-                raise InvalidOperationError("Type does not support augmented subscript assignment.")
+                raise InvalidOperationError(
+                    "Type does not support augmented subscript assignment.")
             
         _generate(self, target, op, value)
     
@@ -990,7 +1040,9 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
         update_code = (var, " += ", update_value.code)
         
         self.body_code.append(
-            ("for (", init_code, "; ", guard.code, "; ", update_code, ") {\n", self.tab)
+            ("for (", init_code, "; ", 
+                      guard.code, "; ", 
+                      update_code, ") {\n", self.tab)
         )
         
         body = [ ]
@@ -1126,42 +1178,56 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
         try:
             _generate_UnaryOp = clq_type._generate_UnaryOp
         except AttributeError:
-            raise InvalidOperationError("Type does not support unary operations.")
+            raise InvalidOperationError(
+                "Type does not support unary operations.")
         
-        return _generate_UnaryOp(self, n)
+        node = _generate_UnaryOp(self, n)
+        clq_type = self._resolve_type(n.unresolved_type)
+        node.clq_type = self._observe(clq_type)
+        return node
         
     def visit_BinOp(self, n):
         clq_type = self._resolve_type(n.left.unresolved_type)
         try:
             _generate_BinOp = clq_type._generate_BinOp
         except AttributeError:
-            raise InvalidOperationError("Type does not support binary operations.")
+            raise InvalidOperationError(
+                "Type does not support binary operations.")
         
         # TODO: two sided
         # TODO: check consistency with _resolve_BinOp
-        return _generate_BinOp(self, n)
+        node = _generate_BinOp(self, n)
+        clq_type = self._resolve_type(n.unresolved_type)
+        node.clq_type = self._observe(clq_type)
+        return node
     
     def visit_Compare(self, n):
         clq_type = self._resolve_type(n.left.unresolved_type)
         try:
             _generate_Compare = clq_type._generate_Compare
         except AttributeError:
-            raise InvalidOperationError("Type does not support compare operations.")
+            raise InvalidOperationError(
+                "Type does not support compare operations.")
         
         # TODO: many-sided?
-        # TODO: check consistency with _resolve_Compare
-        return _generate_Compare(self, n)
+        node = _generate_Compare(self, n)
+        clq_type = self._resolve_type(n.unresolved_type)
+        node.clq_type = self._observe(clq_type)
+        return node
         
     def visit_BoolOp(self, n):
         clq_type = self._resolve_type(n.values[0].unresolved_type)
         try:
             _generate_BoolOp = clq_type._generate_BoolOp
         except AttributeError:
-            raise InvalidOperationError("Type does not support boolean operations.")
+            raise InvalidOperationError(
+                "Type does not support boolean operations.")
 
         # TODO: many-sided
-        # TODO: check consistency with _resolve_BoolOp
-        return _generate_BoolOp(self, n)
+        node = _generate_BoolOp(self, n)
+        clq_type = self._resolve_type(n.unresolved_type)
+        node.clq_type = self._observe(clq_type)
+        return node
     
     ######################################################################
     ## Other Expressions
@@ -1171,7 +1237,9 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
         body = self.visit(n.body)
         orelse = self.visit(n.orelse)
         
-        code = ("((", test.code, ") ? (", body.code, ") : (", orelse.code, ")")
+        code = ("((", test.code, ") ? (", 
+                      body.code, ") : (", 
+                      orelse.code, ")")
         clq_type = self._resolve_type(n.unresolved_type)
         
         return astx.copy_node(n,
@@ -1180,7 +1248,7 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
             orelse=orelse,
             
             code=code,
-            clq_type=clq_type
+            clq_type=self._observe(clq_type)
         )
         
     def visit_Call(self, n):
@@ -1190,8 +1258,10 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
         except AttributeError:
             raise InvalidOperationError("Type does not support call operation.")
         
-        # TODO: check consistency with _resolve_Call
-        return _generate_Call(self, n)
+        node = _generate_Call(self, n)
+        clq_type = self._resolve_type(n.unresolved_type)
+        node.clq_type = self._observe(clq_type)
+        return node
     
     def visit_Attribute(self, n):
         clq_type = self._resolve_type(n.value.unresolved_type)
@@ -1200,8 +1270,10 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
         except AttributeError:
             raise InvalidOperationError("Type does not support attribute access operation.")
         
-        # TODO: check consistency with _resolve_Attribute
-        return _generate_Attribute(self, n)
+        node = _generate_Attribute(self, n)
+        clq_type = self._resolve_type(n.unresolved_type)
+        node.clq_type = self._observe(clq_type)
+        return node
     
     def visit_Subscript(self, n):
         clq_type = self._resolve_type(n.value.unresolved_type)
@@ -1210,70 +1282,48 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
         except AttributeError:
             raise InvalidOperationErro("Type does not support subscript access operation.")
         
-        # TODO: check consistency with _resolve_Attribute
-        return _generate_Subscript(self, n)
+        node = _generate_Subscript(self, n)
+        clq_type = self._resolve_type(unresolved_type)
+        node.clq_type = self._observe(clq_type)
+        return node
     
     def visit_Index(self, n):
         value = self.visit(n.value)
-        return _astx.copy_node(n,
+        return astx.copy_node(n,
             value=value,
             code=value.code,
             clq_type=value.clq_type
         )
         
     def visit_Name(self, n):
-        return _astx.copy_node(n,
+        return astx.copy_node(n,
             code=n.id,
-            clq_type=self._resolve_type(n.unresolved_type)
+            clq_type=self._observe(self._resolve_type(n.unresolved_type))
         )
         
     def visit_Num(self, n):
         # TODO: use proper conversion function (cl.to_cl_numeric_literal)
-        return _astx.copy_node(n,
+        return astx.copy_node(n,
             code=str(n.n),
-            clq_type=self._resolve_type(n.unresolved_type)
+            clq_type=self._observe(self._resolve_type(n.unresolved_type))
         )
         
     def visit_Str(self, n):
         # TODO: use proper conversion function (cl.to_cl_string_literal)
-        return _astx.copy_node(n,
+        return astx.copy_node(n,
             code=('"', n.s, '"'),
-            clq_type=self._resolve_type(n.unresolved_type)
+            clq_type=self._observe(self._resolve_type(n.unresolved_type))
         )
-        
-    # TODO: observe type
-    # TODO: tab and untab
-    # TODO: _new_tmp_var
-    # TODO: _generate_program_item
-    # TODO: variable type header
-        
-class CompileTimeError(Error):
-    def __init__(self, message, node):
-        self.message = message
-        self.node = node
-
-class ProgramItem(object):
-    """Represents an item in an OpenCL program."""
-    def __init__(self, name, source):
-        self.name = name
-        self.source = source
-        
-    name = None
-    """The name of the item, if it has a name, or None."""
     
-    source = None
-    """The OpenCL source code associated with this item."""
-    
-class ExtensionItem(ProgramItem):
-    """Represents an extension."""
-    def __init__(self, extension):
-        self.extension = extension
-        
-    @cypy.lazy(property)
-    def source(self):
-        return self.extension.pragma_str
-cypy.interned(ExtensionItem)
-
+#class ExtensionItem(ProgramItem):
+#    """Represents an extension."""
+#    def __init__(self, extension):
+#        self.extension = extension
+#        
+#    @cypy.lazy(property)
+#    def source(self):
+#        return self.extension.pragma_str
+#cypy.interned(ExtensionItem)
 #_cl_khr_fp64_item = ExtensionItem(cl.cl_khr_fp64)
 #_cl_khr_fp16_item = ExtensionItem(cl.cl_khr_fp16)
 #_cl_khr_byte_addressable_store = ExtensionItem(cl.cl_khr_byte_addressable_store)
