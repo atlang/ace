@@ -1,10 +1,10 @@
 import ast as _ast # http://docs.python.org/library/ast.html
 
 import cypy
-import cypy.astx as astx
 import cypy.cg as cg
-
-from cl.oquence import *
+import cypy.astx as astx
+from cl.oquence import InvalidOperationError, void, is_valid_varname,\
+    ConcreteTypeError, Type, Error, ProgramItem
 
 class GenericFnVisitor(_ast.NodeVisitor):
     """A visitor that produces a copy of a cl.oquence function's syntax tree 
@@ -76,7 +76,7 @@ class GenericFnVisitor(_ast.NodeVisitor):
                 "Keyword arguments are not supported.", n)
 
         # TODO: what are we flattening?
-        args = cypy.flatten_once.ed([ self.visit(arg) for arg in n.args
+        args = cypy.flatten_once.ed([ self.visit(arg) for arg in n.args #@UndefinedVariable (ed)
                                       if arg is not None ])
         return _ast.arguments(
             args=args, 
@@ -89,7 +89,7 @@ class GenericFnVisitor(_ast.NodeVisitor):
         value = n.value
         if value is None:
             value = None
-            return_type = cl.cl_void
+            return_type = void
         else:
             value = self.visit(value)
             return_type = value.unresolved_type
@@ -114,7 +114,7 @@ class GenericFnVisitor(_ast.NodeVisitor):
         targets = n.targets
         if len(targets) != 1:
             raise InvalidOperationError("Multiple assignment targets not supported.")
-        targets = [ self.visit(target[0]) ]
+        targets = [ self.visit(targets[0]) ]
         self.cur_assignment_type = None
         
         return astx.copy_node(n,
@@ -130,9 +130,9 @@ class GenericFnVisitor(_ast.NodeVisitor):
         # We temporarily turn augmented assignments into the equivalent binary 
         # operation to determine the unresolved type.
         orig_ctx = target.ctx 
-        target.ctx = _ast._Load()
+        target.ctx = _ast.Load()
         tmp_value = self.visit(_ast.BinOp(left=target, 
-                                          op=n.op, 
+                                          op=op, 
                                           right=value))
         target.ctx = orig_ctx
         
@@ -368,8 +368,9 @@ class GenericFnVisitor(_ast.NodeVisitor):
                 raise InvalidOperationError(
                     "Invalid number literal suffix.", n)
             
-            clq_type = literal_suffixes[args[0].id]
-            unresolved_type = InlineConstantURT(func.n, clq_type)
+            #clq_type = literal_suffixes[args[0].id]
+            #unresolved_type = InlineConstantURT(func.n, clq_type)
+            raise NotImplementedError()
         else:
             args = [ self.visit(arg) for arg in n.args ]
             unresolved_type = CallURT(func, args)
@@ -916,9 +917,9 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
     untab = staticmethod(cg.CG.untab)
             
     def _generate_name(self):
-        # TODO
-        return self.generic_fn.name    
-      
+        # TODO name mangling
+        return self.generic_fn.name
+    
     def _generate_declarations(self):
         local_variables = self.generic_fn.local_variables
         def _generate():
@@ -934,12 +935,17 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
             kwarg=None,
             defaults=[]
         )
-        
+    
+    def _yield_arg_str(self):
+        concrete_fn = self.concrete_fn
+        for arg_name, arg_type in zip(concrete_fn.generic_fn.arg_names, concrete_fn.arg_types):
+            yield (arg_type.name, " ", arg_name)      
+    
     def _generate_program_item(self):
         g = cg.CG()
         g.append(cypy.join(cypy.cons(self.modifiers, (self.return_type.name,)), " "))
         g.append((" ", self.name, "("))
-        g.append(cypy.join((arg.code for arg in self.args.args), ", "))
+        g.append(cypy.join(self._yield_arg_str(), ", "))
         g.append((") {\n", self.tab))
         g.append(cypy.join(self.declarations, "\n"))
         g.append(self.body_code)
@@ -969,21 +975,21 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
                 _generate = target_type._generate_Assign
             except AttributeError:
                 raise InvalidOperationError(
-                    "Type does not support assignment.")                
+                    "Type does not support assignment.", n)               
         elif isinstance(target, _ast.Attribute):
             obj_type = self._resolve_type(target.value.unresolved_type)
             try:
                 _generate = obj_type._generate_Assign_Attr
             except AttributeError:
                 raise InvalidOperationError(
-                    "Type does not support attribute assignment.")
+                    "Type does not support attribute assignment.", n)
         elif isinstance(target, _ast.Subscript):
             arr_type = self._resolve_type(target.value.unresolved_type)
             try:
                 _generate = arr_type._generate_Assign_Subscript
             except AttributeError:
                 raise InvalidOperationError(
-                    "Type does not support subscript assignment.")
+                    "Type does not support subscript assignment.", n)
         
         _generate(self, target, value)
         
@@ -1007,14 +1013,14 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
         elif isinstance(target, _ast.Attribute):
             obj_type = self._resolve_type(target.value.unresolved_type)
             try:
-                _generate = target_type._generate_AugAssign_Attr
+                _generate = obj_type._generate_AugAssign_Attr
             except AttributeError:
                 raise InvalidOperationError(
                     "Type does not support augmented attribute assignment.")
         elif isinstance(target, _ast.Subscript):
             arr_type = self._resolve_type(target.value.unresolved_type)
             try:
-                _generate = target_type._generate_AugAssign_Subscript
+                _generate = arr_type._generate_AugAssign_Subscript
             except AttributeError:
                 raise InvalidOperationError(
                     "Type does not support augmented subscript assignment.")
@@ -1073,7 +1079,7 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
             
         self.body_code.append((self.untab, "}\n"))
         
-        return astx.code_node(n,
+        return astx.copy_node(n,
             test=test,
             body=body,
             orelse=[]
@@ -1110,7 +1116,7 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
         )
     
     def visit_Expr(self, n):
-        value = self.visit(value)
+        value = self.visit(n.value)
         self.body_code.append((value.code, ";\n"))
         
         return astx.copy_node(n,
@@ -1278,12 +1284,12 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
     def visit_Subscript(self, n):
         clq_type = self._resolve_type(n.value.unresolved_type)
         try:
-            _generate_Attribute = clq_type._generate_Attribute
+            _generate_Subscript = clq_type._generate_Subscript
         except AttributeError:
-            raise InvalidOperationErro("Type does not support subscript access operation.")
+            raise InvalidOperationError("Type does not support subscript access operation.")
         
         node = _generate_Subscript(self, n)
-        clq_type = self._resolve_type(unresolved_type)
+        clq_type = self._resolve_type(n.unresolved_type)
         node.clq_type = self._observe(clq_type)
         return node
     
@@ -1819,126 +1825,7 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
 #        
 #        return cl.to_cl_string_literal(n.s)
 #    
-#_function_name_counts = { }
 #
-#################################################################################
-## Scalar type code generation
-#################################################################################
-#def _type_generate_Assign(self, visitor, target, value):
-#    visit = visitor.visit
-#    return (visit(target), " = ", visit(value), ";")
-#cl.Type._generate_Assign = _type_generate_Assign
-#
-#def _scalar_generate_AugAssign(self, visitor, target, op, value):
-#    visit = visitor.visit
-#    if isinstance(op, (_ast.FloorDiv, _ast.Pow)):
-#        return (visit(target), " = ",
-#                self._generate_BinOp_left(visitor, target, op, value), ";\n")
-#    return (visit(target), " ", visit(op), "= ", visit(value), ";")
-#cl.ScalarType._generate_AugAssign = _scalar_generate_AugAssign
-#
-#def _scalar_generate_Compare(self, visitor, left, ops, comparators, position): #@UnusedVariable
-#    visit = visitor.visit
-#    return ("(", 
-#            cypy.join(_yield_Compare_terms(visit, left, comparators, ops), 
-#                     " && "), 
-#           ")")
-#cl.ScalarType._generate_Compare = _scalar_generate_Compare
-#
-#def _yield_Compare_terms(visit, left, comparators, ops):
-#    for op, right in zip(ops, comparators):
-#        yield (visit(left), " ", visit(op), " ", visit(right))
-#        left = right
-#
-#def _scalar_generate_BoolOp(self, visitor, op, values, position): #@UnusedVariable
-#    visit = visitor.visit
-#    return cypy.join((value for value in values), visit(op))
-#cl.ScalarType._generate_BoolOp = _scalar_generate_BoolOp
-#
-#def _scalar_generate_UnaryOp(self, visitor, op, operand):
-#    return (visitor.visit(op), visitor.visit(operand))
-#cl.ScalarType._generate_UnaryOp = _scalar_generate_UnaryOp
-#
-#################################################################################
-## Integer type code generation
-#################################################################################
-#def _integer_generate_BinOp_left(self, visitor, left, op, right):
-#    visit = visitor.visit
-#    if isinstance(op, _ast.Pow):
-#        # pow is a function
-#        return ("pow(", visit(left), ", ", visit(right), ")")
-#    elif isinstance(op, _ast.FloorDiv):
-#        # floor div differs in implementation depending on types
-#        right_type = visitor._resolve_type(right.unresolved_type)
-#        if isinstance(right_type, cl.FloatType):
-#            # if either are floats, need to do a floor afterwards
-#            return ("floor(", visit(left), " / ", visit(right), ")")
-#        else:
-#            # if both are ints, use regular division
-#            return ("(", visit(left), " / ", visit(right), ")")
-#    else:
-#        return ("(", visit(left), " ", visit(op), " ", visit(right), ")")
-#cl.IntegerType._generate_BinOp_left = _integer_generate_BinOp_left
-#
-#def _integer_generate_Call(self, visitor, func, args):
-#    # implements literal suffixes
-#    if isinstance(func, _ast.Num):
-#        identifier = args[0].id
-#        return ("(", literal_suffixes[identifier].name, ")(", #@UndefinedVariable
-#                visitor.visit(func), ")")
-#cl.IntegerType._generate_Call = _integer_generate_Call
-#
-#################################################################################
-## Float type code generation
-#################################################################################
-#def _float_generate_UnaryOp(self, visitor, op, operand):
-#    return (visitor.visit(op), visitor.visit(operand))
-#cl.FloatType._generate_UnaryOp = _float_generate_UnaryOp
-#
-#def _float_generate_BinOp_left(self, visitor, left, op, right):
-#    visit = visitor.visit
-#    if isinstance(op, _ast.Pow):
-#        # pow is a function
-#        return ("pow(", visit(left), ", ", visit(right), ")")
-#    elif isinstance(op, _ast.FloorDiv):
-#        return ("floor(", visit(left), " / ", visit(right), ")")
-#    else:
-#        return ("(", visit(left), " ", visit(op), " ", visit(right), ")")
-#cl.FloatType._generate_BinOp_left = _float_generate_BinOp_left
-#
-#def _float_generate_Call(self, visitor, func, args): #@UnusedVariable
-#    if isinstance(func, _ast.Num):
-#        identifier = args[0].id
-#        clq_type = literal_suffixes[identifier] #@UndefinedVariable
-#        if clq_type is cl.cl_double:
-#            return str(func.n)
-#        else:
-#            return ("(", clq_type.name, ")(", str(func.n), ")")
-#cl.FloatType._generate_Call = _float_generate_Call
-#
-#################################################################################
-## Pointer type code generation
-#################################################################################
-#def _ptr_generate_BinOp_left(self, visitor, left, op, right):
-#    visit = visitor.visit
-#    return ("(", visit(left), " ", visit(op), " ", visit(right), ")")
-#cl.PtrType._generate_BinOp_left = _ptr_generate_BinOp_left
-#
-#def _ptr_generate_Subscript(self, visitor, value, slice):
-#    visit = visitor.visit
-#    return (visit(value), "[", visit(slice), "]")
-#cl.PtrType._generate_Subscript = _ptr_generate_Subscript
-#
-#def _ptr_generate_AssignSubscript(self, visitor, obj, slice, value):
-#    visit = visitor.visit
-#    return (visit(obj), "[", visit(slice), "] = ", visit(value), ";")
-#cl.PtrType._generate_AssignSubscript = _ptr_generate_AssignSubscript
-#
-#def _ptr_generate_AugAssignSubscript(self, visitor, obj, slice, op, value):
-#    visit = visitor.visit
-#    return (visit(obj), "[", visit(slice), "] ", visit(op), "= ", visit(value), 
-#            ";")
-#cl.PtrType._generate_AugAssignSubscript = _ptr_generate_AugAssignSubscript
 #
 #################################################################################
 ## Vector type code generation

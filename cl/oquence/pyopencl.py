@@ -1,10 +1,10 @@
 # TODO: License header
 # TODO: Module documentation
 
-from pyopencl import *
-import pyopencl as _cl
 import numpy as _numpy
 import cypy
+import pyopencl as _cl
+from pyopencl import *
 
 class Error(Error):
     """Base class for errors in ``cl.oquence.pyopencl``. 

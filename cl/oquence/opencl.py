@@ -1,5 +1,14 @@
-import cypy
+import ast as _ast
 
+import cypy
+import cl.oquence
+from cl.oquence import ConcreteTypeError
+import numpy as _numpy
+from cypy import astx
+
+class Error(Exception):
+    """Base class for errors in cl.oquence.opencl."""
+    
 #############################################################################
 ## Versions
 #############################################################################
@@ -126,21 +135,20 @@ APPLE_extensions = (cl_APPLE_gl_sharing,
 #############################################################################
 ## Data type descriptors
 #############################################################################
-class Type(object):
-    """Base class for descriptors for OpenCL data types.
+class Type(cl.oquence.Type):
+    """Base class for descriptors for OpenCL types.
     
-    Do not initialize this or any subclasses directly -- singletons have 
-    already been defined below.
+    Do not initialize directly -- singletons have already been defined below.
     """
     def __init__(self, name):
-        self.name = name
-        type_names[name] = self
+        cl.oquence.Type.__init__(self, name)
+        cl_types[name] = self
         
     name = None
     """The name of the type."""
     
     def __str__(self):
-        return "<cl.Type <%s>>" % self.name
+        return "<cl.oquence.opencl.Type <%s>>" % self.name
 
     def __repr__(self): 
         return str(self)
@@ -200,17 +208,13 @@ class Type(object):
         obj.target_type = self
         return obj
 cypy.interned(Type)
-type_names = { }
+cl_types = { }
 
-class BuiltinType(Type):
-    """Base class for descriptors for OpenCL builtin types."""    
-    pass
-
-class ScalarType(BuiltinType):
-    """Base class for descriptors for OpenCL scalar types.
+class ScalarType(Type):
+    """Base class for descriptors of OpenCL scalar types.
     
-    Calling a type descriptor will produce an appropriate numpy scalar suitable
-    for calling into a kernel with:
+    Calling a type descriptor will produce an appropriate numpy scalar 
+    suitable for calling into a kernel with:
     
         >>> cl_int(10).__class__
         <type 'numpy.int32'>
@@ -267,9 +271,74 @@ class ScalarType(BuiltinType):
     
     def __call__(self, n):
         return self.dtype.type(n)
+    
+    def _resolve_Compare(self, visitor, left, ops, comparators, position): 
+        resolve = visitor._resolve_type
+        left_type = resolve(left.unresolved_type)
+        if not isinstance(left_type, ScalarType):
+            return
+        
+        for right in comparators:
+            right_type = resolve(right.unresolved_type)
+            if not isinstance(right_type, ScalarType):
+                return
+    
+        return cl_bool
+        
+    def _resolve_BoolOp(self, visitor, op, values, position):
+        resolve = visitor._resolve_type
+        for value in values:
+            value_type = resolve(value.unresolved_type)
+            if not isinstance(value_type, ScalarType):
+                return
+        
+        return cl_bool
+    
+    def _generate_AugAssign(self, visitor, node):
+        # TODO: handle floordiv and pow
+        visit = visitor.visit
+        visitor.body_code.append((
+            visit(node.value).code,
+            " ", visit(node.op).code, "= ",
+            visit(node.target).code, ";\n"
+        ))
+        
+    def _generate_Compare(self, visitor, node):
+        # TODO: comparisons
+        pass
+    
+    #def _scalar_generate_Compare(self, visitor, left, ops, comparators, position): #@UnusedVariable
+    #    visit = visitor.visit
+    #    return ("(", 
+    #            cypy.join(_yield_Compare_terms(visit, left, comparators, ops), 
+    #                     " && "), 
+    #           ")")
+    #
+    #def _yield_Compare_terms(visit, left, comparators, ops):
+    #    for op, right in zip(ops, comparators):
+    #        yield (visit(left), " ", visit(op), " ", visit(right))
+    #        left = right
+
+    def _generate_BoolOp(self, visitor, node):
+        # TODO: bool ops
+        pass
+    
+    #def _scalar_generate_BoolOp(self, visitor, op, values, position): #@UnusedVariable
+    #    visit = visitor.visit
+    #    return cypy.join((value for value in values), visit(op))
+    
+    def _generate_UnaryOp(self, visitor, node):
+        visit = visitor.visit
+        op = visit(node.op)
+        operand = visit(node.operand)
+        code = ("(", op.code, operand.code, ")")
+        return astx.copy_node(node,
+            op=op,
+            operand=operand,
+            code=code)
         
 class IntegerType(ScalarType):
-    """Base class for descriptors for OpenCL scalar integer types."""    
+    """Base class for descriptors of OpenCL scalar integer types."""    
     unsigned = False
     """A boolean indicating whether this is an unsigned integer type."""
     
@@ -278,10 +347,193 @@ class IntegerType(ScalarType):
     
     unsigned_variant = None
     """If integer, this provides the unsigned variant of the type."""
+    
+    def _resolve_UnaryOp(self, visitor, op, left):
+        min_sizeof = self.min_sizeof
+        if min_sizeof < 4: # char, shorts are widened according to C99
+            if self.unsigned:
+                if isinstance(op, _ast.USub):
+                    return cl_int
+                return cl_uint
+            return cl_int
+        
+        if isinstance(op, _ast.USub):
+            return self.signed_variant
+        return self
+
+    def _resolve_BinOp_left(self, visitor, left, op, right):
+        right_type = visitor._resolve_type(right.unresolved_type)
+        
+        if isinstance(right_type, FloatType):
+            return right_type._resolve_BinOp_left(visitor, right, op, left)
+        
+        if isinstance(right_type, IntegerType):
+            min_sizeof = self.min_sizeof
+            if min_sizeof < 4: # char, short on the left
+                if self.unsigned:
+                    if right_type.min_sizeof >= 4:
+                        return right_type.unsigned_variant
+                    return cl_uint
+                if right_type.min_sizeof >= 4:
+                    return right_type
+                if right_type.unsigned:
+                    return cl_uint
+                return cl_int
+            
+            if right_type.min_sizeof < 4: # char, short on the right, recurse
+                return right_type._resolve_BinOp_left(visitor, right, op, left)
+            
+            right_mso = right_type.max_sizeof
+            self_mso = self.max_sizeof
+            
+            if self.unsigned or right_type.unsigned:
+                if self_mso >= right_mso:
+                    return self.unsigned_variant
+                return right_type.unsigned_variant
+            else:
+                if self_mso >= right_mso:
+                    return self
+                return right_type
+            
+        # pointer arithmetic
+        if isinstance(op, _ast.Add) and isinstance(right_type, PtrType):
+            return right_type
+        
+    def _resolve_MultipleAssignment_prev(self, new):
+        if self is new:
+            return self
+        
+        if isinstance(new, FloatType):
+            return new._resolve_MultipleAssignment_prev(self)
+        
+        if isinstance(new, IntegerType):
+            new_mso = new.max_sizeof
+            self_mso = self.max_sizeof
+            
+            if self.unsigned or new.unsigned:
+                if new_mso >= self_mso:
+                    return new.unsigned_variant
+                return self.unsigned_variant
+            if new_mso >= self_mso:
+                return new
+            return self
+    
+    def _generate_BinOp(self, visitor, node):
+        # TODO: handle pow and floordiv
+        visit = visitor.visit
+        left = visit(node.left)
+        op = visit(node.op)
+        right = visit(node.right)
+        code = ("(", left.code, " ", op.code, " ", right.code, ")")
+        return astx.copy_node(node,
+            left=left,
+            op=op,
+            right=right,
+            code=code
+        )
+        
+    def _generate_Call(self, visitor, node):
+        # TODO: implement literal suffixes
+        pass
+
+    #def _integer_generate_BinOp_left(self, visitor, left, op, right):
+    #    visit = visitor.visit
+    #    if isinstance(op, _ast.Pow):
+    #        # pow is a function
+    #        return ("pow(", visit(left), ", ", visit(right), ")")
+    #    elif isinstance(op, _ast.FloorDiv):
+    #        # floor div differs in implementation depending on types
+    #        right_type = visitor._resolve_type(right.unresolved_type)
+    #        if isinstance(right_type, cl.FloatType):
+    #            # if either are floats, need to do a floor afterwards
+    #            return ("floor(", visit(left), " / ", visit(right), ")")
+    #        else:
+    #            # if both are ints, use regular division
+    #            return ("(", visit(left), " / ", visit(right), ")")
+    #    else:
+    #        return ("(", visit(left), " ", visit(op), " ", visit(right), ")")
+    #cl.IntegerType._generate_BinOp_left = _integer_generate_BinOp_left
+    #
+    #def _integer_generate_Call(self, visitor, func, args):
+    #    # implements literal suffixes
+    #    if isinstance(func, _ast.Num):
+    #        identifier = args[0].id
+    #        return ("(", literal_suffixes[identifier].name, ")(", #@UndefinedVariable
+    #                visitor.visit(func), ")")
+    #cl.IntegerType._generate_Call = _integer_generate_Call
 
 class FloatType(ScalarType):
     """Base class for descriptors for OpenCL scalar float types."""
+    def _resolve_UnaryOp(self, visitor, op, left):
+        if isinstance(op, (_ast.USub, _ast.UAdd)):    
+            if self.min_sizeof < 4: # half
+                return cl_float
+            return self
+    
+    def _resolve_BinOp_left(self, visitor, left, op, right):
+        right_type = visitor._resolve_type(right.unresolved_type)
+        
+        if isinstance(right_type, FloatType):
+            self_sizeof = self.min_sizeof
+            right_sizeof = right_type.min_sizeof
+            if self_sizeof >= right_sizeof:
+                if self_sizeof > 2:
+                    return self
+                return cl_float
+            if right_sizeof > 2:
+                return right_type
+            return cl_float
+        
+        if isinstance(right_type, IntegerType):
+            if self.min_sizeof > 2:
+                return self
+            return cl_float
+    
+    def _float_resolve_MultipleAssignment_prev(self, new):
+        if isinstance(new, FloatType):
+            if new.min_sizeof >= self.min_sizeof:
+                return new
+            return self
+        if isinstance(new, IntegerType):
+            return self
 
+    def _generate_BinOp(self, visitor, node):
+        # TODO: handle pow and floordiv
+        visit = visitor.visit
+        left = visit(node.left)
+        op = visit(node.op)
+        right = visit(node.right)
+        code = ("(", left.code, " ", op.code, " ", right.code, ")")
+        return astx.copy_node(node,
+            left=left,
+            op=op,
+            right=right,
+            code=code
+        )
+    
+    def _generate_Call(self, visitor, node):
+        # implement literal suffixes
+        pass
+    
+    #def _float_generate_BinOp_left(self, visitor, left, op, right):
+    #    visit = visitor.visit
+    #    if isinstance(op, _ast.Pow):
+    #        # pow is a function
+    #        return ("pow(", visit(left), ", ", visit(right), ")")
+    #    elif isinstance(op, _ast.FloorDiv):
+    #        return ("floor(", visit(left), " / ", visit(right), ")")
+    #    else:
+    #        return ("(", visit(left), " ", visit(op), " ", visit(right), ")")
+    #
+    #def _float_generate_Call(self, visitor, func, args): #@UnusedVariable
+    #    if isinstance(func, _ast.Num):
+    #        identifier = args[0].id
+    #        clq_type = literal_suffixes[identifier] #@UndefinedVariable
+    #        if clq_type is cl.cl_double:
+    #            return str(func.n)
+    #        else:
+    #            return ("(", clq_type.name, ")(", str(func.n), ")")
+ 
 to_cl_type = { }
 """A map from numpy.dtype descriptors to :class:`ScalarType` descriptors."""
 
@@ -342,32 +594,21 @@ cl_char = _define_scalar_type(name="char", dtype_name="int8", sizeof=1,
                               min=-(2**7), max=2**7-1, literal_suffix=None,
                               integer=True)
 """8-bit signed integer type."""
-i8 = cl_char
-"""Short name for cl_char.
-
-.. Note:: These short names are non-standard.
-"""
 
 cl_uchar = _define_scalar_type(name="uchar", dtype_name="uint8", sizeof=1,
                                min=0, max=2**8-1, literal_suffix=None,
                                integer=True, signed_variant=cl_char)
 """8-bit unsigned integer type."""
-ui8 = cl_uchar
-"""Short name for cl_uchar."""
 
 cl_short = _define_scalar_type(name="short", dtype_name="int16", sizeof=2,
                                min=-(2**15), max=2**15-1, literal_suffix=None,
                                integer=True)
 """16-bit signed integer type."""
-i16 = cl_short
-"""Short name for cl_short."""
 
 cl_ushort = _define_scalar_type(name="ushort", dtype_name="uint16", sizeof=2,
                                 min=0, max=2**16-1, literal_suffix=None,
                                 integer=True, signed_variant=cl_short)
 """16-bit unsigned integer type."""
-ui16 = cl_ushort
-"""Short name for cl_ushort."""
 
 cl_int = _define_scalar_type(name="int", dtype_name="int32", sizeof=4,
                              min=-(2**31), max=2**31-1, literal_suffix=None,
@@ -375,29 +616,21 @@ cl_int = _define_scalar_type(name="int", dtype_name="int32", sizeof=4,
 """32-bit signed integer type."""
 # override default behavior
 cl_int.make_literal = lambda literal: str(int(literal))
-i32 = cl_int
-"""Short name for cl_int."""
 
 cl_uint = _define_scalar_type(name="uint", dtype_name="uint32", sizeof=4, 
                               min=0, max=2**32-1, literal_suffix="u", # u?
                               integer=True, signed_variant=cl_int)
 """32-bit unsigned integer type."""
-ui32 = cl_uint
-"""Short name for cl_uint."""
 
 cl_long = _define_scalar_type(name="long", dtype_name="int64", sizeof=8,
                               min=-(2**63), max=2**63-1, literal_suffix="L",
                               integer=True)
 """64-bit signed integer type."""
-i64 = cl_long
-"""Short name for cl_long."""
 
 cl_ulong = _define_scalar_type(name="ulong", dtype_name="uint64", sizeof=8,
                               min=0, max=2**64-1, literal_suffix="uL",
                               integer=True, signed_variant=cl_long)
 """64-bit unsigned integer type."""
-ui64 = cl_ulong
-"""Short name for cl_ulong."""
 
 # half is not quite a scalar type in that you cannot have half values as a local
 # variable without enabling an extension, but you can use half arrays with
@@ -415,8 +648,6 @@ cl_half = _define_scalar_type(name="half", dtype_name=None, sizeof=2,
 
 See the spec if you intend to use this, its complicated.
 """
-f16 = cl_half
-"""Short name for cl_half."""
 
 cl_float = _define_scalar_type(name="float", dtype_name="float32", sizeof=4,
                                min=float("-3.402823466E38"),  
@@ -425,8 +656,6 @@ cl_float = _define_scalar_type(name="float", dtype_name="float32", sizeof=4,
                                float=True)
 """32-bit floating point type."""
 cl_float.min_positive = float("1.1754945351E-38")
-f32 = cl_float
-"""Short name for cl_float."""
 
 cl_double = _define_scalar_type(name="double", dtype_name="float64", sizeof=8,
                                 min=float("-1.7976931348623158E308"), 
@@ -436,8 +665,6 @@ cl_double = _define_scalar_type(name="double", dtype_name="float64", sizeof=8,
 """64-bit floating point type."""
 cl_double.min_positive = float("2.2250738585072014E-308"),
 cl_double.make_literal = lambda literal: str(float(literal))
-f64 = cl_double
-"""Short name for cl_double."""
 
 cl_bool = cl_int
 """cl_bool is cl_int"""
@@ -455,8 +682,6 @@ cl_intptr_t = _define_scalar_type(name="intptr_t", dtype_name=None, sizeof=None,
 """Signed-integer type with size equal to ``Device.address_bits``."""
 cl_intptr_t.min_sizeof = 4
 cl_intptr_t.max_sizeof = 8
-iptr = cl_intptr_t
-"""Short name for cl_intptr_t."""
 
 cl_uintptr_t = _define_scalar_type(name="uintptr_t", dtype_name=None, 
                                    sizeof=None, min=None, max=None, 
@@ -465,8 +690,6 @@ cl_uintptr_t = _define_scalar_type(name="uintptr_t", dtype_name=None,
 """Unsigned integer type with size equal to ``Device.address_bits``."""
 cl_uintptr_t.min_sizeof = 4
 cl_uintptr_t.max_sizeof = 8
-uiptr = cl_uintptr_t
-"""Short name for cl_uintptr_t."""
 
 cl_ptrdiff_t = _define_scalar_type(name="ptrdiff_t", dtype_name=None,
                                    sizeof=None, min=None, max=None,
@@ -474,8 +697,6 @@ cl_ptrdiff_t = _define_scalar_type(name="ptrdiff_t", dtype_name=None,
 """Signed integer type large enough to hold the result of subtracting pointers."""
 cl_ptrdiff_t.min_sizeof = 4
 cl_ptrdiff_t.max_sizeof = 8
-ptrdiff_t = cl_ptrdiff_t
-"""Short name for cl_ptrdiff_t."""
 
 cl_size_t = _define_scalar_type(name="size_t", dtype_name=None,
                                 sizeof=None, min=None, max=None,
@@ -484,8 +705,6 @@ cl_size_t = _define_scalar_type(name="size_t", dtype_name=None,
 """Unsigned integer type large enough to hold the maximum length of a buffer."""
 cl_size_t.min_sizeof = 4
 cl_size_t.max_sizeof = 8
-size_t = cl_size_t
-"""Short name for cl_size_t."""
 
 class PtrType(Type):
     """Base class for descriptors for OpenCL pointer types."""
@@ -496,16 +715,92 @@ class PtrType(Type):
     """The short name of the address space, e.g. "global"."""
     
     @cypy.lazy(property)
-    def suffix_name(self):
-        return "_" + self.short_address_space + self.target_type.name + "ptr" + "_"
-    
-    @cypy.lazy(property)
     def version(self):
         return self.target_type.version
     
     min_sizeof = 4
     max_sizeof = 8
     
+    def _resolve_Subscript(self, visitor, value, slice):
+        slice_type = visitor._resolve_type(slice.unresolved_type)
+        
+        #if isinstance(slice_type, GID):
+        #    visitor.delta_r[value].push(slice_type)
+            
+        if not isinstance(slice_type, IntegerType):
+            raise ConcreteTypeError(
+                "Subscript index must be an integer, but saw a %s." 
+                % slice_type.name)
+        return self.target_type
+
+    def _resolve_BinOp_left(self, visitor, left, op, right):
+        right_type = visitor._resolve_type(right.unresolved_type)
+        
+        if (isinstance(op, _ast.Sub) 
+            and isinstance(right_type, self.__class__)):
+            return cl_ptrdiff_t
+        
+        if isinstance(right_type, IntegerType) and \
+           isinstance(op, (_ast.Add, _ast.Sub)):
+            return self
+
+    def _resolve_MultipleAssignment_prev(self, new):
+        if self is new:
+            return self
+        
+        if isinstance(new, PtrType) and new.address_space == self.address_space:
+            if self.target_type is cl_void:
+                return new
+            if new.target_type is cl_void:
+                return self
+            
+        if isinstance(new, IntegerType): 
+            # mostly for NULL pointers but any integer can be assigned to 
+            # a pointer variable
+            return self
+
+    #def _ptr_resolve_SubscriptAssignment(self, visitor, arr, slice, val):
+    #    slice_type = visitor._resolve_type(slice.unresolved_type)
+        
+    #    if isinstance(slice_type, GID):
+    #        visitor.delta_w[value].push(slice_type)
+    #    TODO resolve subscript assignment business
+    
+    def _generate_BinOp(self, visitor, node):
+        visit = visitor.visit
+        left = visit(node.left)
+        op = visit(node.op)
+        right = visit(node.right)
+        code = ("(", left.code, " ", op.code, " ", right.code, ")")
+        return astx.copy_node(node,
+            left=left,
+            op=op,
+            right=right,
+            code=code
+        )
+
+    def _generate_Subscript(self, visitor, node):
+        visit = visitor.visit
+        value = visit(node.value)
+        slice = visit(node.slice)
+        code = (value.code, "[", slice.code, "]")
+        return astx.copy_node(node,
+            value=value,
+            slice=slice,
+            code=code
+        )
+        
+    def _generate_Assign_Subscript(self, visitor, target, value):
+        visit = visitor.visit
+        visitor.body_code.append((visit(target).code, " = ", 
+                                  visit(value).code, ";\n"))
+        
+    def _generate_AugAssign_Subscript(self, visitor, target, op, value):
+        visit = visitor.visit
+        visitor.body_code.append((visit(target).code, " ",
+                                  visit(op).code, "= ",
+                                  visit(value).code, ";\n"))
+        
 class GlobalPtrType(PtrType):
     """Base class for descriptors for OpenCL pointers to global memory."""
     address_space = "__global"
@@ -526,55 +821,55 @@ class PrivatePtrType(PtrType):
     address_space = "__private"
     short_address_space = ""
     
-class VectorType(BuiltinType):
-    """Abstract base type for vector types."""
-    
-    n = None
-    """The size of the vector type."""
-    
-    base_type = None
-    """The base scalar type for this vector type."""
-    
-    @cypy.lazy(property)
-    def version(self):
-        return self.base_type.version
-    
-    @cypy.lazy(property)
-    def min_sizeof(self):
-        return self.base_type.min_sizeof * self.n
-    
-    @cypy.lazy(property)
-    def max_sizeof(self):
-        return self.base_type.max_sizeof * self.n
-
-vector_valid_n = (2, 4, 8, 16)
-"""Valid values of ``n`` for vector types."""
-
-vector_base_types = (cl_char, cl_uchar, cl_short, cl_ushort, cl_int, cl_uint,
-                     cl_long, cl_ulong, cl_float, cl_double)
-# TODO: enable double extensions if doublen is used
-
-vector_types = { }
-"""Allows lookup of a vector type by name or by [base type][n]"""
-
-for base_type in vector_base_types:
-    vector_types_base = vector_types[base_type] = { }
-    for n in vector_valid_n:
-        base_name = base_type.name
-        name = base_name + str(n)
-        cl_type = VectorType(name)
-        cl_type.n = n
-        cl_type.base_type = base_type
-        vector_types[name] = cl_type
-        vector_types_base[n] = cl_type
-# TODO: How to introduce name to module dictionary?
-# TODO: How to initialize values of this type?
-        
-# TODO: what are the possible sizes for these types? restrictions?
-cl_event_t = event_t = Type("event_t")
-cl_image2d_t = image2d_t = Type("image2d_t")
-cl_image3d_t = image3d_t = Type("image3d_t")
-cl_sampler_t = sampler_t = Type("sampler_t")
+#class VectorType(Type):
+#    """Abstract base type for vector types."""
+#    
+#    n = None
+#    """The size of the vector type."""
+#    
+#    base_type = None
+#    """The base scalar type for this vector type."""
+#    
+#    @cypy.lazy(property)
+#    def version(self):
+#        return self.base_type.version
+#    
+#    @cypy.lazy(property)
+#    def min_sizeof(self):
+#        return self.base_type.min_sizeof * self.n
+#    
+#    @cypy.lazy(property)
+#    def max_sizeof(self):
+#        return self.base_type.max_sizeof * self.n
+#
+#vector_valid_n = (2, 4, 8, 16)
+#"""Valid values of ``n`` for vector types."""
+#
+#vector_base_types = (cl_char, cl_uchar, cl_short, cl_ushort, cl_int, cl_uint,
+#                     cl_long, cl_ulong, cl_float, cl_double)
+## TODO: enable double extensions if doublen is used
+#
+#vector_types = { }
+#"""Allows lookup of a vector type by name or by [base type][n]"""
+#
+#for base_type in vector_base_types:
+#    vector_types_base = vector_types[base_type] = { }
+#    for n in vector_valid_n:
+#        base_name = base_type.name
+#        name = base_name + str(n)
+#        cl_type = VectorType(name)
+#        cl_type.n = n
+#        cl_type.base_type = base_type
+#        vector_types[name] = cl_type
+#        vector_types_base[n] = cl_type
+## TODO: How to introduce name to module dictionary?
+## TODO: How to initialize values of this type?
+#        
+## TODO: what are the possible sizes for these types? restrictions?
+#cl_event_t = event_t = Type("event_t")
+#cl_image2d_t = image2d_t = Type("image2d_t")
+#cl_image3d_t = image3d_t = Type("image3d_t")
+#cl_sampler_t = sampler_t = Type("sampler_t")
 
 def to_cl_string_literal(value):
     """Produces an OpenCL string literal from a string value."""
@@ -599,19 +894,19 @@ def to_cl_numeric_literal(value, unsigned=False, report_type=False):
         "4.0f"
 
         >>> to_cl_numeric_literal(4, report_type=True)
-        (<cl.Type <int>>, "4")
+        (<Type <int>>, "4")
 
         >>> to_cl_numeric_literal(4.0, report_type=True)
-        (<cl.Type <float>>, "4.0f")
+        (<Type <float>>, "4.0f")
 
         >>> to_cl_numeric_literal(2**50, report_type=True)
-        (<cl.Type <long>>, "1125899906842624L")
+        (<Type <long>>, "1125899906842624L")
 
         >>> to_cl_numeric_literal(2**50, unsigned=True, report_type=True)
-        (<cl.Type <ulong>>, "1125899906842624uL")
+        (<Type <ulong>>, "1125899906842624uL")
 
         >>> to_cl_numeric_literal(cl_double.max, report_type=True)
-        (<cl.Type <double>>, "1.79769313486e+308")
+        (<Type <double>>, "1.79769313486e+308")
 
     Non-numeric values will throw AssertionErrors.
 
@@ -699,6 +994,30 @@ class BuiltinFn(object):
     requires_extensions = None
     """If not None, returns a tuple of extensions required for arguments of 
     the specified types."""
+    
+    @cypy.lazy(property)
+    def clq_type(self):
+        return BuiltinFnType(self)
+
+class BuiltinFnType(Type):
+    """The type of OpenCL builtin function stubs (:class:`BuiltinFn`)."""
+    def __init__(self, builtin):
+        self.builtin = self.constant_value = builtin
+        
+    def __repr__(self):
+        return self.builtin.name
+    
+    def _resolve_Call(self, visitor, func, args):
+        builtin = self.builtin
+        arg_types = tuple(visitor._resolve_type(arg.unresolved_type) 
+                          for arg in args)
+        return builtin.return_type_fn(*arg_types)
+    
+    def _generate_Call(self, visitor, node):
+        visit = visitor.visit
+        func = visitor.visit(node.func)
+        # TODO
+cypy.interned(BuiltinFnType)
 
 class BuiltinConstant(object):
     """A descriptor for builtin constants available to OpenCL kernels."""
@@ -721,8 +1040,8 @@ get_work_dim = BuiltinFn("get_work_dim", lambda D: cl_uint)
 """The ``get_work_dim`` builtin function."""
 get_global_size = BuiltinFn("get_global_size", lambda D: cl_size_t)
 """The ``get_global_size`` builtin function."""
-#get_global_id = BuiltinFn("get_global_id", lambda D: cl_size_t)
-get_global_id = BuiltinFn("get_global_id", lambda D: GID(1, 0))
+get_global_id = BuiltinFn("get_global_id", lambda D: cl_size_t)
+#get_global_id = BuiltinFn("get_global_id", lambda D: GID(1, 0))
 """The ``get_global_id`` builtin function."""
 get_local_size = BuiltinFn("get_local_size", lambda D: cl_size_t)
 """The ``get_local_size`` builtin function."""
@@ -1130,467 +1449,181 @@ reserved_keyword_descriptors = tuple(ReservedKeyword(kw)
                                      for kw in reserved_keywords)
 
 ################################################################################
-# General type resolution
-################################################################################
-@cypy.memoize
-def _type_resolve_Compare(self, visitor, left, ops, comparators, position): #@UnusedVariable
-    resolve = visitor._resolve_type
-    left_type = resolve(left.unresolved_type)
-    if not isinstance(left_type, cl.ScalarType):
-        return
-    
-    for right in comparators:
-        right_type = resolve(right.unresolved_type)
-        if not isinstance(right_type, cl.ScalarType):
-            return
-
-    return cl.cl_bool
-cl.ScalarType._resolve_Compare = _type_resolve_Compare
-
-@cypy.memoize
-def _type_resolve_BoolOp(self, visitor, op, values, position): #@UnusedVariable
-    resolve = visitor._resolve_type
-    for value in values:
-        value_type = resolve(value.unresolved_type)
-        if not isinstance(value_type, cl.BuiltinType):
-            return
-    
-    return cl.cl_bool
-cl.ScalarType._resolve_BoolOp = _type_resolve_BoolOp
-    
-################################################################################
-# Integer type resolution
-################################################################################
-@cypy.memoize
-def _integer_resolve_UnaryOp(self, visitor, op, left): #@UnusedVariable
-    min_sizeof = self.min_sizeof
-    if min_sizeof < 4: # char, shorts are widened according to C99
-        if self.unsigned:
-            if isinstance(op, _ast.USub):
-                return cl.cl_int
-            return cl.cl_uint
-        return cl.cl_int
-    
-    if isinstance(op, _ast.USub):
-        return self.signed_variant
-    return self
-cl.IntegerType._resolve_UnaryOp = _integer_resolve_UnaryOp
-
-@cypy.memoize
-def _integer_resolve_BinOp_left(self, visitor, left, op, right):
-    right_type = visitor._resolve_type(right.unresolved_type)
-    if isinstance(right_type, cl.FloatType):
-        return right_type._resolve_BinOp_left(visitor, right, op, left)
-    
-    if isinstance(right_type, cl.IntegerType):
-        min_sizeof = self.min_sizeof
-        if min_sizeof < 4: # char, short on the left
-            if self.unsigned:
-                if right_type.min_sizeof >= 4:
-                    return right_type.unsigned_variant
-                return cl.cl_uint
-            if right_type.min_sizeof >= 4:
-                return right_type
-            if right_type.unsigned:
-                return cl.cl_uint
-            return cl.cl_int
-        
-        if right_type.min_sizeof < 4: # char, short on the right, recurse
-            return right_type._resolve_BinOp_left(visitor, right, op, left)
-        
-        right_mso = right_type.max_sizeof
-        self_mso = self.max_sizeof
-        
-        if self.unsigned or right_type.unsigned:
-            if self_mso >= right_mso:
-                return self.unsigned_variant
-            return right_type.unsigned_variant
-        else:
-            if self_mso >= right_mso:
-                return self
-            return right_type
-        
-    # pointer arithmetic
-    if isinstance(op, _ast.Add) and isinstance(right_type, cl.PtrType):
-        return right_type
-cl.IntegerType._resolve_BinOp_left = \
-    _integer_resolve_BinOp_left
-
-@cypy.memoize
-def _integer_resolve_MultipleAssignment_prev(self, new):
-    if self is new:
-        return self
-    
-    if isinstance(new, cl.FloatType):
-        return new._resolve_MultipleAssignment_prev(self)
-    
-    if isinstance(new, cl.IntegerType):
-        new_mso = new.max_sizeof
-        self_mso = self.max_sizeof
-        
-        if self.unsigned or new.unsigned:
-            if new_mso >= self_mso:
-                return new.unsigned_variant
-            return self.unsigned_variant
-        if new_mso >= self_mso:
-            return new
-        return self
-cl.IntegerType._resolve_MultipleAssignment_prev = \
-    _integer_resolve_MultipleAssignment_prev
-
-################################################################################
-# Float type resolution
-################################################################################
-@cypy.memoize
-def _float_resolve_UnaryOp(self, visitor, op, left): #@UnusedVariable
-    if isinstance(op, (_ast.USub, _ast.UAdd)):    
-        if self.min_sizeof < 4: # half
-            return cl.cl_float
-        return self
-cl.FloatType._resolve_UnaryOp = _float_resolve_UnaryOp
-
-@cypy.memoize
-def _float_resolve_BinOp_left(self, visitor, left, op, right): #@UnusedVariable
-    right_type = visitor._resolve_type(right.unresolved_type)
-    
-    if isinstance(right_type, cl.FloatType):
-        self_sizeof = self.min_sizeof
-        right_sizeof = right_type.min_sizeof
-        if self_sizeof >= right_sizeof:
-            if self_sizeof > 2:
-                return self
-            return cl.cl_float
-        if right_sizeof > 2:
-            return right_type
-        return cl.cl_float
-    
-    if isinstance(right_type, cl.IntegerType):
-        if self.min_sizeof > 2:
-            return self
-        return cl.cl_float
-cl.FloatType._resolve_BinOp_left = _float_resolve_BinOp_left
-
-@cypy.memoize
-def _float_resolve_MultipleAssignment_prev(self, new):
-    if isinstance(new, cl.FloatType):
-        if new.min_sizeof >= self.min_sizeof:
-            return new
-        return self
-    if isinstance(new, cl.IntegerType):
-        return self
-cl.FloatType._resolve_MultipleAssignment_prev = \
-    _float_resolve_MultipleAssignment_prev
-    
-################################################################################
-# Pointer type resolution
-################################################################################
-@cypy.memoize
-def _ptr_resolve_Subscript(self, visitor, value, slice): #@UnusedVariable
-    slice_type = visitor._resolve_type(slice.unresolved_type)
-    
-    if isinstance(slice_type, GID):
-        visitor.delta_r[value].push(slice_type)
-        
-    elif not isinstance(slice_type, cl.IntegerType):
-        raise InvalidTypeError(
-            "Subscript index must be an integer, but saw a %s." 
-            % slice_type.name)
-    return self.target_type
-cl.PtrType._resolve_Subscript = _ptr_resolve_Subscript
-
-@cypy.memoize
-def _ptr_resolve_SubscriptAssignment(self, visitor, arr, slice, val):
-    slice_type = visitor._resolve_type(slice.unresolved_type)
-    
-    if isinstance(slice_type, GID):
-        visitor.delta_w[value].push(slice_type)
-    # TODO ...
-    
-@cypy.memoize
-def _ptr_resolve_BinOp_left(self, visitor, left, op, right): #@UnusedVariable
-    right_type = visitor._resolve_type(right.unresolved_type)
-    
-    if isinstance(op, _ast.Sub) and isinstance(right_type, self.__class__):
-        return cl.cl_ptrdiff_t
-    
-    if isinstance(right_type, cl.IntegerType) and \
-       isinstance(op, (_ast.Add, _ast.Sub)):
-        return self
-cl.PtrType._resolve_BinOp_left = _ptr_resolve_BinOp_left
-
-@cypy.memoize
-def _ptr_resolve_MultipleAssignment_prev(self, new):
-    if self is new:
-        return self
-    
-    if isinstance(new, cl.PtrType) and new.address_space == self.address_space:
-        if self.target_type is cl.cl_void:
-            return new
-        if new.target_type is cl.cl_void:
-            return self
-        
-    if isinstance(new, cl.IntegerType): 
-        # mostly for NULL pointers but any integer can be assigned to 
-        # a pointer variable
-        return self
-cl.PtrType._resolve_MultipleAssignment_prev = \
-    _ptr_resolve_MultipleAssignment_prev
-    
-################################################################################
 # Vector type resolution
 ################################################################################
-@cypy.memoize
-def _vec_resolve_UnaryOp(self, visitor, op, operand):
-    base_type = self.base_type
-    if isinstance(base_type, cl.IntegerType):
-        if isinstance(op, _ast.USub) and not base_type.unsigned:
-            return self
-        return self
-
-    elif isinstance(base_type, cl.FloatType):
-        if isinstance(op, (_ast.UAdd, _ast.USub)):
-            return self
-cl.VectorType._resolve_UnaryOp = _vec_resolve_UnaryOp
-
-@cypy.memoize
-def _vec_resolve_BinOp(self, visitor, right):
-    resolve = visitor._resolve_type
-    right_type = resolve(right)
-    if right_type is self:
-        return self
+#@cypy.memoize
+#def _vec_resolve_UnaryOp(self, visitor, op, operand):
+#    base_type = self.base_type
+#    if isinstance(base_type, IntegerType):
+#        if isinstance(op, _ast.USub) and not base_type.unsigned:
+#            return self
+#        return self
+#
+#    elif isinstance(base_type, FloatType):
+#        if isinstance(op, (_ast.UAdd, _ast.USub)):
+#            return self
+#VectorType._resolve_UnaryOp = _vec_resolve_UnaryOp
+#
+#@cypy.memoize
+#def _vec_resolve_BinOp(self, visitor, right):
+#    resolve = visitor._resolve_type
+#    right_type = resolve(right)
+#    if right_type is self:
+#        return self
+#    
+#    base_type = self.base_type
+#    if isinstance(right_type, IntegerType) \
+#       and isinstance(base_type, IntegerType):
+#        if right_type.max_sizeof <= base_type.min_sizeof:
+#            return self
+#        
+#    if isinstance(right_type, FloatType) \
+#       and isinstance(base_type, FloatType):
+#        if right_type.max_sizeof <= base_type.min_sizeof:
+#            return self
+#VectorType._resolve_BinOp_left = lambda self, visitor, left, op, right: \
+#    _vec_resolve_BinOp(self, visitor, right)
+#VectorType._resolve_BinOp_right = lambda self, visitor, left, op, right: \
+#    _vec_resolve_BinOp(self, visitor, left)
+#    
+#@cypy.memoize
+#def _vec_resolve_Attribute(self, visitor, obj, attr):
+#    if attr == "lo" or attr == "hi" or attr == "even" or attr == "odd":
+#        return vector_types[self.base_type][self.n / 2]
+#    
+#    if attr[0] == "s" and len(attr) == 2:
+#        try:
+#            idx = int(attr[1], 16)
+#        except ValueError: pass
+#        else:
+#            if idx <= self.n:
+#                return self.base_type
+#    else:
+#        ok = True
+#        acceptable = ("x", "y", "z", "w")[0:(self.n+1)]
+#        for idx in attr:
+#            if idx not in acceptable:
+#                ok = False
+#                break
+#            
+#        if ok:
+#            if len(attr) == 1:
+#                return self.base_type
+#            else:
+#                try:
+#                    return vector_types[self.base_type][len(attr)]
+#                except KeyError: pass
+#VectorType._resolve_Attribute = _vec_resolve_Attribute
+#
+## TODO: this isn't being called correctly
+#@cypy.memoize
+#def _vec_resolve_AssignAttribute(self, visitor, obj, attr, value):
+#    n = None
+#    
+#    if attr == "lo" or attr == "hi" or attr == "even" or attr == "odd":
+#        n = self.n / 2
+#        
+#    if attr[0] == "s" and len(attr) == 2:
+#        try:
+#            idx = int(attr[1], 16)
+#        except ValueError: pass
+#        else:
+#            if idx <= self.n:
+#                n = 1
+#                
+#    else:
+#        ok = True
+#        acceptable = ("x", "y", "z", "w")[0:(self.n+1)]
+#        accepted = set()
+#        for idx in attr:
+#            if idx not in acceptable:
+#                ok = False
+#                break
+#            elif idx in accepted:
+#                ok = False
+#                break
+#            else:
+#                accepted.add(idx)
+#        
+#        if ok:
+#            n = len(attr)
+#            
+#    if n is not None:
+#        value_type = visitor._resolve_type(value)
+#        if n == 1:
+#            required_type = self.base_type
+#        else:
+#            required_type = vector_types[self.base_type][n]
+#        
+#        if value_type is required_type:
+#            return True
+#
+#        base_type = self.base_type
+#        if isinstance(value_type, IntegerType) \
+#           and isinstance(base_type, IntegerType) \
+#           and base_type.min_sizeof <= value_type.max_sizeof:
+#            return True
+#        
+#        elif isinstance(value_type, FloatType) \
+#             and isinstance(base_type, FloatType) \
+#             and base_type.min_sizeof <= value_type.max_sizeof:
+#            return True
+#VectorType._resolve_AssignAttribute = _vec_resolve_AssignAttribute
+#
+#@cypy.memoize
+#def _vec_resolve_AugAssignAttribute(self, visitor, obj, attr, op, value):
+#    return _vec_resolve_AssignAttribute(self, visitor, obj, attr, value)
+#VectorType._resolve_AugAssignAttribute = _vec_resolve_AugAssignAttribute
+#
+## TODO: multiple assignment
     
-    base_type = self.base_type
-    if isinstance(right_type, cl.IntegerType) \
-       and isinstance(base_type, cl.IntegerType):
-        if right_type.max_sizeof <= base_type.min_sizeof:
-            return self
-        
-    if isinstance(right_type, cl.FloatType) \
-       and isinstance(base_type, cl.FloatType):
-        if right_type.max_sizeof <= base_type.min_sizeof:
-            return self
-cl.VectorType._resolve_BinOp_left = lambda self, visitor, left, op, right: \
-    _vec_resolve_BinOp(self, visitor, right)
-cl.VectorType._resolve_BinOp_right = lambda self, visitor, left, op, right: \
-    _vec_resolve_BinOp(self, visitor, left)
-    
-@cypy.memoize
-def _vec_resolve_Attribute(self, visitor, obj, attr):
-    if attr == "lo" or attr == "hi" or attr == "even" or attr == "odd":
-        return cl.vector_types[self.base_type][self.n / 2]
-    
-    if attr[0] == "s" and len(attr) == 2:
-        try:
-            idx = int(attr[1], 16)
-        except ValueError: pass
-        else:
-            if idx <= self.n:
-                return self.base_type
-    else:
-        ok = True
-        acceptable = ("x", "y", "z", "w")[0:(self.n+1)]
-        for idx in attr:
-            if idx not in acceptable:
-                ok = False
-                break
-            
-        if ok:
-            if len(attr) == 1:
-                return self.base_type
-            else:
-                try:
-                    return cl.vector_types[self.base_type][len(attr)]
-                except KeyError: pass
-cl.VectorType._resolve_Attribute = _vec_resolve_Attribute
-
-# TODO: this isn't being called correctly
-@cypy.memoize
-def _vec_resolve_AssignAttribute(self, visitor, obj, attr, value):
-    n = None
-    
-    if attr == "lo" or attr == "hi" or attr == "even" or attr == "odd":
-        n = self.n / 2
-        
-    if attr[0] == "s" and len(attr) == 2:
-        try:
-            idx = int(attr[1], 16)
-        except ValueError: pass
-        else:
-            if idx <= self.n:
-                n = 1
-                
-    else:
-        ok = True
-        acceptable = ("x", "y", "z", "w")[0:(self.n+1)]
-        accepted = set()
-        for idx in attr:
-            if idx not in acceptable:
-                ok = False
-                break
-            elif idx in accepted:
-                ok = False
-                break
-            else:
-                accepted.add(idx)
-        
-        if ok:
-            n = len(attr)
-            
-    if n is not None:
-        value_type = visitor._resolve_type(value)
-        if n == 1:
-            required_type = self.base_type
-        else:
-            required_type = cl.vector_types[self.base_type][n]
-        
-        if value_type is required_type:
-            return True
-
-        base_type = self.base_type
-        if isinstance(value_type, cl.IntegerType) \
-           and isinstance(base_type, cl.IntegerType) \
-           and base_type.min_sizeof <= value_type.max_sizeof:
-            return True
-        
-        elif isinstance(value_type, cl.FloatType) \
-             and isinstance(base_type, cl.FloatType) \
-             and base_type.min_sizeof <= value_type.max_sizeof:
-            return True
-cl.VectorType._resolve_AssignAttribute = _vec_resolve_AssignAttribute
-
-@cypy.memoize
-def _vec_resolve_AugAssignAttribute(self, visitor, obj, attr, op, value):
-    return _vec_resolve_AssignAttribute(self, visitor, obj, attr, value)
-cl.VectorType._resolve_AugAssignAttribute = _vec_resolve_AugAssignAttribute
-
-# TODO: multiple assignment
-
-##############################################################################
-# Generic multiple assignment 
-##############################################################################
-@cypy.memoize
-def _generic_resolve_MultipleAssignment_prev(self, new):
-    if self is new: return self
-cl.Type._resolve_MultipleAssignment_prev = \
-    _generic_resolve_MultipleAssignment_prev
-
-##############################################################################
-## Virtual Types
-##############################################################################
-class VirtualType(object):
-    """Base class for virtual cl.oquence types.
-    
-    That is, types that don't correspond directly to OpenCL types, and are 
-    only meaningful in cl.oquence code. They will be translated into code 
-    which only uses OpenCL types.
-    """
-    constant_value = None
-    """The constant value associated with this virtual type, or None."""
-
-class FnType(VirtualType):
-    """Base class for cl.oquence function types of various sorts."""
-    pass
-
-class GenericFnType(FnType):
-    """The type of cl.oquence GenericFn's."""
-    def __init__(self, generic_fn):
-        self.generic_fn = self.constant_value = generic_fn
-        
-    def __repr__(self):
-        return self.generic_fn.__name__
-    
-    @cypy.memoize
-    def _resolve_Call(self, visitor, func, args): #@UnusedVariable
-        explicit_arg_types = tuple(visitor._resolve_type(arg.unresolved_type) 
-                                   for arg in args)
-        return self.generic_fn._get_concrete_fn(explicit_arg_types).return_type    
-cypy.interned(GenericFnType)
-
-class ConcreteFnType(FnType):
-    """The type of cl.oquence ConcreteFn's."""
-    def __init__(self, concrete_fn):
-        self.concrete_fn = self.constant_value = concrete_fn
-        
-    def __repr__(self):
-        return self.concrete_fn.full_name
-    
-    @cypy.memoize
-    def _resolve_Call(self, visitor, func, args): #@UnusedVariable
-        concrete_fn = self.concrete_fn
-        explicit_arg_types = concrete_fn.explicit_arg_types
-        arg_types = tuple(visitor._resolve_type(arg.unresolved_type) 
-                          for arg in args)
-        if arg_types != explicit_arg_types:
-            raise InvalidTypeError(
-                "Argument types are not compatible. Got %s, expected %s." % 
-                (arg_types, explicit_arg_types))
-        return self.concrete_fn.return_type
-cypy.interned(ConcreteFnType)
-    
-class BuiltinFnType(FnType):
-    """The type of OpenCL builtin function stubs (:class:`cl.BuiltinFn`)."""
-    def __init__(self, builtin):
-        self.builtin = self.constant_value = builtin
-        
-    def __repr__(self):
-        return self.builtin.name
-    
-    @cypy.memoize
-    def _resolve_Call(self, visitor, func, args): #@UnusedVariable
-        builtin = self.builtin
-        arg_types = tuple(visitor._resolve_type(arg.unresolved_type) 
-                          for arg in args)
-        return builtin.return_type_fn(*arg_types)
-cypy.interned(BuiltinFnType)
-
-@property
-def _builtin_clq_type(self):
-    return BuiltinFnType(self)
-cl.BuiltinFn.clq_type = _builtin_clq_type
-
-class AddressofType(object):
-    """The type of the addressof macro.
-    
-    (addressof is a macro because addressof(x[y]) should have the type of the 
-     pointer x, it cannot simply evaluate the type of x[y] and then make it 
-     into a pointer because that would be ambiguous wrt address space.)
-    """
-    def _resolve_Call(self, visitor, func, args): #@UnusedVariable
-        if len(args) != 1:
-            raise InvalidTypeError(
-                "The addressof operator only takes one argument.")
-        
-        arg = args[0]
-        # even if its a subscript, we want to make sure it typechecks
-        arg_type = visitor._resolve_type(arg.unresolved_type)
-        if isinstance(arg, _ast.Subscript):
-            return visitor._resolve_type(arg.value.unresolved_type)
-        return arg_type.private_ptr
-# injected as clq_type in __init__ to avoid circular reference problems
-    
-class TypeType(VirtualType):
-    """Base class for the types of types."""
-    def __init__(self, type):
-        self.type = type
-        
-    @cypy.memoize
-    def _resolve_Call(self, visitor, func, args): #@UnusedVariable
-        # for type cast syntax
-        if len(args) == 1:
-            arg = args[0]
-            arg_type = visitor._resolve_type(arg.unresolved_type) #@UnusedVariable
-            if not isinstance(arg_type, (cl.ScalarType, cl.PtrType)):
-                raise InvalidTypeError("Cannot cast a %s to a %s." % 
-                                       (arg_type.name, self.name))
-            return self.type
-        else:
-            raise InvalidTypeError("Casts can only take one argument.")
-    
-@property
-def _type_clq_type(self):
-    return TypeType(self)
-cl.Type.clq_type = _type_clq_type
-
+#class AddressofType(object):
+#    """The type of the addressof macro.
+#    
+#    (addressof is a macro because addressof(x[y]) should have the type of the 
+#     pointer x, it cannot simply evaluate the type of x[y] and then make it 
+#     into a pointer because that would be ambiguous wrt address space.)
+#    """
+#    def _resolve_Call(self, visitor, func, args): #@UnusedVariable
+#        if len(args) != 1:
+#            raise InvalidTypeError(
+#                "The addressof operator only takes one argument.")
+#        
+#        arg = args[0]
+#        # even if its a subscript, we want to make sure it typechecks
+#        arg_type = visitor._resolve_type(arg.unresolved_type)
+#        if isinstance(arg, _ast.Subscript):
+#            return visitor._resolve_type(arg.value.unresolved_type)
+#        return arg_type.private_ptr
+## injected as clq_type in __init__ to avoid circular reference problems
+#addressof = cypy.Singleton(cl_type=AddressofType())
+#"""A macro to support the '&' operator in OpenCL. 
+#
+#Must import into scope of your function to use this.
+#"""
+#
+#class TypeType(VirtualType):
+#    """Base class for the types of types."""
+#    def __init__(self, type):
+#        self.type = type
+#        
+#    @cypy.memoize
+#    def _resolve_Call(self, visitor, func, args): #@UnusedVariable
+#        # for type cast syntax
+#        if len(args) == 1:
+#            arg = args[0]
+#            arg_type = visitor._resolve_type(arg.unresolved_type) #@UnusedVariable
+#            if not isinstance(arg_type, (ScalarType, PtrType)):
+#                raise InvalidTypeError("Cannot cast a %s to a %s." % 
+#                                       (arg_type.name, self.name))
+#            return self.type
+#        else:
+#            raise InvalidTypeError("Casts can only take one argument.")
+#    
+#@property
+#def _type_clq_type(self):
+#    return TypeType(self)
+#Type.clq_type = _type_clq_type
 
 
 #    ##########################################################################
@@ -1826,8 +1859,3 @@ literal_suffixes = {
 """A map from numeric literal suffixes to their correspond 
 `type <cl.ScalarType>`."""
 
-addressof = cypy.Singleton(cl_type=AddressofType())
-"""A macro to support the '&' operator in OpenCL. 
-
-Must import into scope of your function to use this.
-"""

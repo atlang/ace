@@ -3,6 +3,9 @@ import ast as _ast # http://docs.python.org/library/ast.html
 import cypy
 import cypy.astx as astx
 
+class Error(Exception):
+    """Base class for errors in cl.oquence."""
+    
 version = cypy.Version("cl.oquence", (("Major", 1), ("Minor", 0)), "alpha")
 """The current :class:`Version <cypy.Version>` of cl.oquence (1.0 alpha)."""
 
@@ -90,10 +93,9 @@ class GenericFn(object):
         return visitor.visit(self.ast)
     
     @cypy.lazy(property)
-    def arguments(self):
+    def arg_names(self):
         """A tuple containing all arguments specified by this function."""
-        return self.annotated_ast.arguments 
-        # TODO: implement this as return astx.FunctionDef_co_varnames(self.ast)
+        return astx.FunctionDef_co_varnames(self.ast) 
         
     @cypy.lazy(property)
     def local_variables(self):
@@ -126,7 +128,7 @@ class ConcreteFn(object):
     def __init__(self, generic_fn, arg_types):
         self.generic_fn = generic_fn
         self.arg_types = arg_types
-        self.arg_map = cypy.frozendict(zip(generic_fn.arguments, arg_types))
+        self.arg_map = cypy.frozendict(zip(generic_fn.arg_names, arg_types))
         
     @cypy.setonce(property)
     def generic_fn(self):
@@ -189,6 +191,13 @@ class Type(object):
     def __repr__(self):
         return str(self)
     
+    def _generate_Assign(self, visitor, target, value):
+        visitor.body_code.append((visitor.visit(target).code, " = ",
+                                  visitor.visit(value).code, ";\n"))
+    
+    def _resolve_MultipleAssignment_prev(self, new):
+        if self is new: return self
+
 class VoidType(Type):
     """The type of :obj:`void`."""
     def __init__(self):
@@ -203,16 +212,38 @@ class GenericFnType(Type):
     def __init__(self, generic_fn):
         Type.__init__(self, generic_fn.name)
         self.generic_fn = generic_fn
-        
+         
+    def _resolve_Call(self, visitor, func, args):
+        arg_types = tuple(visitor._resolve_type(arg.unresolved_type)
+                          for arg in args)
+        concrete_fn = self.generic_fn.compile(*arg_types)
+        # TODO: could be more efficient
+        return concrete_fn._resolve_call(visitor, func, args)
+cypy.interned(GenericFnType)
+
 class ConcreteFnType(Type):
-    """Each concrete function uniquely inhabits an instance of ConcreteFnType."""
+    """Each concrete function uniquely inhabits a ConcreteFnType."""
     def __init__(self, concrete_fn):
         Type.__init__(self, concrete_fn.name)
         self.concrete_fn = concrete_fn
         
-class Error(Exception):
-    """Base class for errors in cl.oquence."""
-    
+    def _resolve_Call(self, visitor, func, args):
+        concrete_fn = self.concrete_fn
+        
+        # check argument types
+        fn_arg_types = concrete_fn.arg_types
+        provided_arg_types = tuple(visitor._resolve_type(arg.unresolved_type)
+                                   for arg in args)
+        if fn_arg_types != provided_arg_types:
+            raise ConcreteTypeError(
+                "Argument types are not compatible. Got %s, expected %s." % 
+                (str(fn_arg_types), str(provided_arg_types)))
+        
+        # everything looks okay, return 
+        return concrete_fn.return_type
+        return self.concrete_fn.return_type
+cypy.interned(ConcreteFnType)
+
 class InvalidOperationError(Error):
     """Raised if an invalid operation is observed in a generic function."""
     def __init__(self, message, node):
