@@ -3,15 +3,18 @@ import ast as _ast # http://docs.python.org/library/ast.html
 import cypy
 import cypy.cg as cg
 import cypy.astx as astx
-from cl.oquence import InvalidOperationError, void, is_valid_varname,\
-    ConcreteTypeError, Type, Error, ProgramItem
+
+from clq import (Error, InvalidOperationError, ConcreteTypeError,
+                 Type, ProgramItem, void, is_valid_varname)
 
 class GenericFnVisitor(_ast.NodeVisitor):
-    """A visitor that produces a copy of a cl.oquence function's syntax tree 
+    """A visitor that produces a copy of a generic function's syntax tree 
     annotated with additional information:
     
-    - unresolved types for each expression (the ``unresolved_type`` attribute)
+    - :class:`unresolved types <UnresolvedType>` for each expression (in the 
+      ``unresolved_type`` attribute)
     - maps from variable names to their unresolved types
+    
     """
     def __init__(self):
         # variable name => unresolved type
@@ -1335,7 +1338,7 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
 #_cl_khr_byte_addressable_store = ExtensionItem(cl.cl_khr_byte_addressable_store)
 #
 #class ProgramItemVisitor(_ast.NodeVisitor):
-#    """Visits an annotated ast to produce program items and metadata."""
+#    """Visits an annotated original_ast to produce program items and metadata."""
 #    def __init__(self, generic_fn, explicit_arg_names, explicit_arg_types, 
 #                 constants):
 #        self.generic_fn = generic_fn

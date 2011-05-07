@@ -1,3 +1,5 @@
+"""The cl.oquence kernel programming language."""
+
 import ast as _ast # http://docs.python.org/library/ast.html
 
 import cypy
@@ -15,17 +17,17 @@ def fn(decl):
     
     Typical usage is as a decorator::
     
-        @cl.oquence.fn
+        @clq.fn
         def sum(a, b, dest):
             gid = get_global_id(0)
             dest[gid] = a[gid] + b[gid]
             
-    As with any decorator, you can also call it explicitly::
+    As with any decorator, the above is Python syntactic sugar for::
     
         def sum(a, b, dest):
             gid = get_global_id(0)
             dest[gid] = a[gid] + b[gid]
-        sum_cl = cl.oquence.fn(sum)
+        sum = clq.fn(sum)
         
     .. WARNING:: Functions defined on the ``python`` or ``ipython`` command 
                  line do not retain their source, so this won't work. A bug 
@@ -60,22 +62,25 @@ def _from_ast(ast):
 fn.from_ast = _from_ast
 
 class GenericFn(object):
-    """A generic cl.oquence function. That is, one without concrete types."""
+    """A generic cl.oquence function. That is, one without concrete types.
+    
+    Generic functions are immutable and interned.
+    """
     def __init__(self, ast):
-        self.ast = ast
+        self.original_ast = ast
 
     ###########################################################################
     # Abstract Syntax Tree
     ###########################################################################         
     @cypy.setonce(property)
-    def ast(self):
+    def original_ast(self):
         """The (untyped) Python abstract syntax tree for this GenericFn."""
         return self._ast
 
-    @ast.setter
-    def ast(self, value):
+    @original_ast.setter
+    def original_ast(self, value):
         if not isinstance(value, _ast.FunctionDef):            
-            raise Error("Root of ast must be a FunctionDef, but got a %s." %
+            raise Error("Root of original_ast must be a FunctionDef, but got a %s." %
                         value.__class__.__name__)
         self._ast = value
         self.__name__ = value.name
@@ -85,17 +90,18 @@ class GenericFn(object):
     def annotated_ast(self): 
         """An annotated copy of the abstract syntax tree for this GenericFn.
         
-        - Each expression is annotated with an unresolved_type attribute
-        - Variable names are extracted
+        - Each expression is annotated with an unresolved_type attribute (see
+          internals)
+        - Variable names are extracted and classified
         
         """
         visitor = self._visitor = internals.GenericFnVisitor()
-        return visitor.visit(self.ast)
+        return visitor.visit(self.original_ast)
     
     @cypy.lazy(property)
     def arg_names(self):
         """A tuple containing all arguments specified by this function."""
-        return astx.FunctionDef_co_varnames(self.ast) 
+        return astx.FunctionDef_co_varnames(self.original_ast) 
         
     @cypy.lazy(property)
     def local_variables(self):
@@ -110,7 +116,7 @@ class GenericFn(object):
         return self.annotated_ast.all_variables
 
     def compile(self, *arg_types):
-        """Creates a :class:`concrete function <ConcreteFn>` for the provided
+        """Creates a :class:`concrete function <ConcreteFn>` with the provided
         argument types."""
         return ConcreteFn(self, arg_types)
         
@@ -150,8 +156,7 @@ class ConcreteFn(object):
         
     @cypy.lazy(property)
     def typed_ast(self):
-        """The abstract syntax tree for this function, annotated with a fully 
-        resolved clq_type attributes on each expression."""
+        """The typed abstract syntax tree for this function."""
         visitor = self._visitor = internals.ConcreteFnVisitor(self)
         return visitor.visit(self._generic_fn.annotated_ast)
     
@@ -162,17 +167,17 @@ class ConcreteFn(object):
     
     @cypy.lazy(property)
     def program_item(self):
-        """The program item corresponding to this function itself."""
+        """The program item corresponding to this function."""
         return self.typed_ast.program_item
     
     @cypy.lazy(property)
     def return_type(self):
-        """The concrete return type of this function."""
+        """The return type of this function."""
         return self.typed_ast.return_type
     
     @cypy.lazy(property)
-    def fullname(self):
-        """The fully mangled name of this function."""
+    def name(self):
+        """The fully-mangled name of this function."""
         return self.program_item.name
     
     @cypy.lazy(property)
@@ -181,21 +186,24 @@ class ConcreteFn(object):
 cypy.interned(ConcreteFn)
 
 class Type(object):
-    """Base class for cl.oquence concrete types."""
+    """Base class for cl.oquence types."""
     def __init__(self, name):
         self.name = name
 
     def __str__(self):
-        return "<cl.oquence.Type <%s>>" % self.name
+        return "<clq.Type <%s>>" % self.name
     
     def __repr__(self):
         return str(self)
     
-    def _generate_Assign(self, visitor, target, value):
-        visitor.body_code.append((visitor.visit(target).code, " = ",
-                                  visitor.visit(value).code, ";\n"))
+    # TODO: remove _ before these
+    # TODO: list all possibilities here
     
-    def _resolve_MultipleAssignment_prev(self, new):
+    def _generate_Assign(self, context, target, value):
+        context.body_code.append((context.visit(target).code, " = ",
+                                  context.visit(value).code, ";\n"))
+    
+    def _resolve_MultipleAssignment_prev(self, context, new):
         if self is new: return self
 
 class VoidType(Type):
@@ -205,20 +213,19 @@ class VoidType(Type):
 cypy.interned(VoidType)
 
 void = VoidType()
-"""Singleton instance of VoidType."""
+"""Functions that do not return a value are given the ``void`` return type."""
     
 class GenericFnType(Type):
-    """Each generic function uniquely inhabits an instance of GenericFnType."""
+    """Each generic function has a corresponding instance of GenericFnType."""
     def __init__(self, generic_fn):
         Type.__init__(self, generic_fn.name)
         self.generic_fn = generic_fn
          
-    def _resolve_Call(self, visitor, func, args):
-        arg_types = tuple(visitor._resolve_type(arg.unresolved_type)
+    def _resolve_Call(self, context, func, args):
+        arg_types = tuple(context._resolve_type(arg.unresolved_type)
                           for arg in args)
         concrete_fn = self.generic_fn.compile(*arg_types)
-        # TODO: could be more efficient
-        return concrete_fn._resolve_call(visitor, func, args)
+        return concrete_fn.return_type
 cypy.interned(GenericFnType)
 
 class ConcreteFnType(Type):
@@ -227,12 +234,12 @@ class ConcreteFnType(Type):
         Type.__init__(self, concrete_fn.name)
         self.concrete_fn = concrete_fn
         
-    def _resolve_Call(self, visitor, func, args):
+    def _resolve_Call(self, context, func, args):
         concrete_fn = self.concrete_fn
         
         # check argument types
         fn_arg_types = concrete_fn.arg_types
-        provided_arg_types = tuple(visitor._resolve_type(arg.unresolved_type)
+        provided_arg_types = tuple(context._resolve_type(arg.unresolved_type)
                                    for arg in args)
         if fn_arg_types != provided_arg_types:
             raise ConcreteTypeError(
@@ -241,7 +248,6 @@ class ConcreteFnType(Type):
         
         # everything looks okay, return 
         return concrete_fn.return_type
-        return self.concrete_fn.return_type
 cypy.interned(ConcreteFnType)
 
 class InvalidOperationError(Error):
@@ -258,7 +264,6 @@ class ConcreteTypeError(Error):
 def is_valid_varname(id):
     """Returns a boolean indicating whether id can be used as a variable name 
     in cl.oquence code."""
-    # TODO: this needs to cover more things
     return True
 
 class ProgramItem(object):
@@ -273,4 +278,5 @@ class ProgramItem(object):
     code = None
     """The source code associated with this item."""
 
-import internals
+# placed at the end because the internals use the definitions above
+import internals 
