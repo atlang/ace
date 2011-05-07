@@ -1,4 +1,4 @@
-import ast as _ast
+import original_ast as _ast
 
 import cypy
 import cl.oquence
@@ -1041,7 +1041,6 @@ get_work_dim = BuiltinFn("get_work_dim", lambda D: cl_uint)
 get_global_size = BuiltinFn("get_global_size", lambda D: cl_size_t)
 """The ``get_global_size`` builtin function."""
 get_global_id = BuiltinFn("get_global_id", lambda D: cl_size_t)
-#get_global_id = BuiltinFn("get_global_id", lambda D: GID(1, 0))
 """The ``get_global_id`` builtin function."""
 get_local_size = BuiltinFn("get_local_size", lambda D: cl_size_t)
 """The ``get_local_size`` builtin function."""

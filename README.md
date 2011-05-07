@@ -1,16 +1,19 @@
 # cl.oquence
 
-cl.oquence is a language.
+cl.oquence is a kernel programming language.
+
+# Installation Instructions
+## Unix, Linux and Mac
+
+## Windows
 
 # Directory Structure
 
-- ``cl.oquence``
-- ``cl.egans``
-- ``cl.ements``
-- ``cypy``
+# License
 
-- ``doc``
-- ``tests``
+# Contributors
 
-- ``clqcc.py``
-- ``setup.py``
+# Resources
+ - http://cl.oquence.org/
+ - C99 standard
+ - OpenCL standard
