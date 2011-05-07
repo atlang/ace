@@ -78,9 +78,7 @@ class GenericFnVisitor(_ast.NodeVisitor):
             raise InvalidOperationError(
                 "Keyword arguments are not supported.", n)
 
-        # TODO: what are we flattening?
-        args = cypy.flatten_once.ed([ self.visit(arg) for arg in n.args #@UndefinedVariable (ed)
-                                      if arg is not None ])
+        args = [self.visit(arg) for arg in n.args if arg is not None]
         return _ast.arguments(
             args=args, 
             vararg=None, 
@@ -510,15 +508,14 @@ class GenericFnVisitor(_ast.NodeVisitor):
         )
         
     def visit_Num(self, n):
-        num = n.n
-        
         return astx.copy_node(n,
-            unresolved_type=InlineConstantURT(num, infer_clq_type(num)))
+            unresolved_type=InlineConstantURT(n.n, None)  #infer_clq_type(num)
+        )
     
     def visit_Str(self, n):
-        # TODO: fix dependence on cl
         return astx.copy_node(n,
-            unresolved_type=InlineConstantURT(n.s, cl.cl_char.private_ptr))  
+            unresolved_type=InlineConstantURT(n.s, None) #  cl.cl_char.private_ptr
+        )  
     
 ##############################################################################
 ## Unresolved Types

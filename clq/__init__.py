@@ -39,30 +39,48 @@ def fn(decl):
                  A workaround for earlier versions of ipython is to use the 
                  fn.from_source form described below.
 
+    To create a generic function from a string, use the ``fn.from_source``
+    form::
+    
+        clq.fn.from_source('''
+        def sum(a, b, dest):
+            gid = get_global_id(0)
+            dest[gid] = a[gid] + b[gid]
+        ''')
+        
+    To create a generic function from an abstract syntax tree, use the 
+    ``fn.from_ast`` form::
+    
+        clq.fn.from_ast(ast.parse('''
+        def sum(a, b, dest):
+            gid = get_global_id(0)
+            dest[gid] = a[gid] + b[gid]
+        '''))
+
+    See the :mod:`ast` module in the Python standard library for more 
+    information on manipulating Python syntax trees. The :mod:`cypy.astx`
+    module provides several convenience functions for working with Python 
+    ASTs as well.
     """
     ast = astx.infer_ast(decl)
     ast = astx.extract_the(ast, _ast.FunctionDef)
     return GenericFn(ast)
     
 def _from_source(src):
-    """Creates a :class:`GenericFn` from the provided src, with the provided
-    defaults and global context.
-    
-    Defaults must be specified explicitly. Inline expressions in the src 
-    string cannot be evaluated correctly and thus should not be used.
-    """
     ast = astx.infer_ast(src)
     ast = astx.extract_the(ast, _ast.FunctionDef)
     return GenericFn(ast)
 fn.from_source = _from_source
 
 def _from_ast(ast):
-    """Creates a :class:`GenericFn` from the provided Python AST."""
     return GenericFn(ast)
 fn.from_ast = _from_ast
 
 class GenericFn(object):
-    """A generic cl.oquence function. That is, one without concrete types.
+    """A generic cl.oquence function. 
+    
+    It is generic in the sense that its arguments have not yet been assigned 
+    concrete types.
     
     Generic functions are immutable and interned.
     """
@@ -74,14 +92,16 @@ class GenericFn(object):
     ###########################################################################         
     @cypy.setonce(property)
     def original_ast(self):
-        """The (untyped) Python abstract syntax tree for this GenericFn."""
+        """The original, unannotated Python abstract syntax tree for this 
+        generic function."""
         return self._ast
 
     @original_ast.setter
     def original_ast(self, value):
         if not isinstance(value, _ast.FunctionDef):            
-            raise Error("Root of original_ast must be a FunctionDef, but got a %s." %
-                        value.__class__.__name__)
+            raise Error(
+            "Root of original_ast must be a FunctionDef, but got a %s." %
+                value.__class__.__name__)
         self._ast = value
         self.__name__ = value.name
         self.__doc__ = _ast.get_docstring(value, clean=False)
@@ -90,28 +110,30 @@ class GenericFn(object):
     def annotated_ast(self): 
         """An annotated copy of the abstract syntax tree for this GenericFn.
         
-        - Each expression is annotated with an unresolved_type attribute (see
-          internals)
-        - Variable names are extracted and classified
-        
+        See :class:`internals.GenericFnVisitor`.
         """
         visitor = self._visitor = internals.GenericFnVisitor()
         return visitor.visit(self.original_ast)
     
     @cypy.lazy(property)
     def arg_names(self):
-        """A tuple containing all arguments specified by this function."""
+        """A tuple of strings containing all the arguments named by this  
+        generic function."""
         return astx.FunctionDef_co_varnames(self.original_ast) 
         
     @cypy.lazy(property)
     def local_variables(self):
-        """A tuple containing all local variables used by this function."""
+        """A tuple of strings containing all the local variables named in
+        this generic function."""
         return self.annotated_ast.local_variables
 
     @cypy.lazy(property)
     def all_variables(self):
-        """A tuple containing all variables (arguments + local) used by this 
-        function.
+        """A tuple of strings containing all the variables (both arguments and
+        local variables) named by or in this function::
+        
+            self.all_variables == cons.ed(self.arg_names, self.local_variables)
+            
         """
         return self.annotated_ast.all_variables
 

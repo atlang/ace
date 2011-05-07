@@ -1,13 +1,14 @@
-import original_ast as _ast
+import ast as _ast
 
+import clq
 import cypy
-import cl.oquence
-from cl.oquence import ConcreteTypeError
+import cypy.astx as astx
 import numpy as _numpy
-from cypy import astx
+
+from clq import ConcreteTypeError
 
 class Error(Exception):
-    """Base class for errors in cl.oquence.opencl."""
+    """Base class for errors in clq.opencl."""
     
 #############################################################################
 ## Versions
@@ -135,20 +136,20 @@ APPLE_extensions = (cl_APPLE_gl_sharing,
 #############################################################################
 ## Data type descriptors
 #############################################################################
-class Type(cl.oquence.Type):
+class Type(clq.Type):
     """Base class for descriptors for OpenCL types.
     
     Do not initialize directly -- singletons have already been defined below.
     """
     def __init__(self, name):
-        cl.oquence.Type.__init__(self, name)
+        clq.Type.__init__(self, name)
         cl_types[name] = self
         
     name = None
     """The name of the type."""
     
     def __str__(self):
-        return "<cl.oquence.opencl.Type <%s>>" % self.name
+        return "<clq.opencl.Type <%s>>" % self.name
 
     def __repr__(self): 
         return str(self)

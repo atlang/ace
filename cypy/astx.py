@@ -1,11 +1,11 @@
-"""Utilities for working with the python original_ast module."""
+"""Utilities for working with the python ast module."""
 
-import original_ast as _ast 
+import ast as _ast 
 
 import cypy
 
 def init_node(cls, *args, **kwargs):
-    """Initializes an original_ast node with the provided attributes.
+    """Initializes an ast node with the provided attributes.
     
     Python 2.6+ supports this in the node class initializers, but Python 2.5 
     does not, so this is intended to be an equivalent.
@@ -38,7 +38,7 @@ def copy_node_into(node, new_node, *args, **kwargs):
 def infer_ast(src):
     """Attempts to infer an abstract syntax tree from the provided value.
     
-    - Python original_ast.AST instances are passed through.
+    - Python ast.AST instances are passed through.
     - Strings are parsed. A SyntaxError is raised if invalid.
     - Functions are sent through cypy.fn_get_source to get a source
       string, then parsed. If the source can't be a found, an exception is 
