@@ -35,6 +35,26 @@ def copy_node_into(node, new_node, *args, **kwargs):
         
     return new_node
 
+def deep_copy_node(node, *args, **kwargs):
+    cls = node.__class__
+    new_node = cls()
+    return deep_copy_node_into(node, new_node, *args, **kwargs)
+
+def deep_copy_node_into(node, new_node, *args, **kwargs):
+    for name, value in node.__dict__.iteritems():
+        if isinstance(value, _ast.AST):
+            value = deep_copy_node(value)
+        setattr(new_node, name, value)
+        
+    cls = node.__class__
+    for name, value in zip(cls._fields, args):
+        setattr(new_node, name, value)
+        
+    for name, value in kwargs.iteritems():
+        setattr(new_node, name, value)
+        
+    return new_node
+
 def infer_ast(src):
     """Attempts to infer an abstract syntax tree from the provided value.
     
@@ -89,34 +109,41 @@ def FunctionDef_co_varnames(fd):
     assert isinstance(fd, _ast.FunctionDef)
     return tuple(arg.id for arg in fd.args.args)
 
-unary_operators = {
+unary_operators = cypy.make_symmetric({
     _ast.Invert: '~',
     _ast.Not: 'not',
     _ast.UAdd: '+',
     _ast.USub: '-',
-}
+})
 
-binary_operators = {
-    _ast.Add: '+',
-    _ast.Sub: '-',
-    _ast.Mult: '*',
-    _ast.Div: '/',
-    _ast.Mod: '%',
-    _ast.Pow: '**',
+integer_binary_operators = cypy.make_symmetric({
     _ast.LShift: '<<',
     _ast.RShift: '>>',
     _ast.BitOr: '|',
     _ast.BitXor: '^',
-    _ast.BitAnd: '&',
-    _ast.FloorDiv: '//'
-}
+    _ast.Mod: '%'
+})
 
-boolean_operators = {
+non_integer_binary_operators = cypy.make_symmetric({
+    _ast.Add: '+',
+    _ast.Sub: '-',
+    _ast.Mult: '*',
+    _ast.Div: '/',
+    _ast.Pow: '**',    
+    _ast.FloorDiv: '//'
+})
+
+binary_operators = cypy.merge_dicts(
+    integer_binary_operators,
+    non_integer_binary_operators
+)
+
+boolean_operators = cypy.make_symmetric({
     _ast.And: "and",
     _ast.Or: "or",
-}
+})
 
-comparison_operators = {
+comparison_operators = cypy.make_symmetric({
     _ast.Eq: '==',
     _ast.NotEq: '!=',
     _ast.Lt: '<',
@@ -127,35 +154,42 @@ comparison_operators = {
     _ast.IsNot: 'is not',
     _ast.In: 'in',
     _ast.NotIn: 'not in',
-}
+})
 
 all_operators = cypy.merge_dicts(unary_operators, 
-                                binary_operators,
-                                boolean_operators, 
-                                comparison_operators)
+                                 binary_operators,
+                                 boolean_operators, 
+                                 comparison_operators)
 
 C_unary_operators = dict(unary_operators)
 C_unary_operators[_ast.Not] = "!"
+C_unary_operators["!"] = _ast.Not
 
-C_binary_operators = dict(binary_operators)
-del C_binary_operators[_ast.Pow]
-del C_binary_operators[_ast.FloorDiv]
+C_integer_binary_operators = dict(integer_binary_operators)
+C_non_integer_binary_operators = dict(non_integer_binary_operators)
+del C_non_integer_binary_operators[_ast.Pow]
+del C_non_integer_binary_operators["**"]
+del C_non_integer_binary_operators[_ast.FloorDiv]
+del C_non_integer_binary_operators["//"]
 
-C_boolean_operators = {
+C_binary_operators = cypy.merge_dicts(C_integer_binary_operators,
+                                      C_non_integer_binary_operators)
+
+C_boolean_operators = cypy.make_symmetric({
     _ast.And: "&&",
-    _ast.Or: "||"
-}
+    _ast.Or: "||",
+})
 
-C_comparison_operators = {
+C_comparison_operators = cypy.make_symmetric({
     _ast.Eq: "==",
     _ast.NotEq: "!=",
     _ast.Lt: "<",
     _ast.LtE: "<=",
     _ast.Gt: ">",
     _ast.GtE: ">=",
-}
+})
 
 C_all_operators = cypy.merge_dicts(C_unary_operators,
-                                  C_binary_operators,
-                                  C_boolean_operators,
-                                  C_comparison_operators)
+                                   C_binary_operators,
+                                   C_boolean_operators,
+                                   C_comparison_operators)

@@ -1,15 +1,12 @@
 """The cl.oquence kernel programming language."""
-
 import ast as _ast # http://docs.python.org/library/ast.html
 
 import cypy
 import cypy.astx as astx
+import cypy.cg as cg
 
-class Error(Exception):
-    """Base class for errors in cl.oquence."""
-    
 version = cypy.Version("cl.oquence", (("Major", 1), ("Minor", 0)), "alpha")
-"""The current :class:`Version <cypy.Version>` of cl.oquence (1.0 alpha)."""
+"""The current :class:`version <cypy.Version>` of cl.oquence (1.0 alpha)."""
 
 def fn(decl):
     """Create a :class:`generic cl.oquence function <GenericFn>` from a 
@@ -40,7 +37,7 @@ def fn(decl):
                  fn.from_source form described below.
 
     To create a generic function from a string, use the ``fn.from_source``
-    form::
+    function::
     
         clq.fn.from_source('''
         def sum(a, b, dest):
@@ -49,7 +46,7 @@ def fn(decl):
         ''')
         
     To create a generic function from an abstract syntax tree, use the 
-    ``fn.from_ast`` form::
+    ``fn.from_ast`` function::
     
         clq.fn.from_ast(ast.parse('''
         def sum(a, b, dest):
@@ -66,15 +63,17 @@ def fn(decl):
     ast = astx.extract_the(ast, _ast.FunctionDef)
     return GenericFn(ast)
     
-def _from_source(src):
+def from_source(src):
     ast = astx.infer_ast(src)
     ast = astx.extract_the(ast, _ast.FunctionDef)
     return GenericFn(ast)
-fn.from_source = _from_source
+fn.from_source = from_source
+del from_source
 
-def _from_ast(ast):
+def from_ast(ast):
     return GenericFn(ast)
-fn.from_ast = _from_ast
+fn.from_ast = from_ast
+del from_ast
 
 class GenericFn(object):
     """A generic cl.oquence function. 
@@ -100,7 +99,7 @@ class GenericFn(object):
     def original_ast(self, value):
         if not isinstance(value, _ast.FunctionDef):            
             raise Error(
-            "Root of original_ast must be a FunctionDef, but got a %s." %
+            "Root node of ast must be a FunctionDef, but got a %s." %
                 value.__class__.__name__)
         self._ast = value
         self.__name__ = value.name
@@ -117,34 +116,33 @@ class GenericFn(object):
     
     @cypy.lazy(property)
     def arg_names(self):
-        """A tuple of strings containing all the arguments named by this  
-        generic function."""
+        """A tuple of strings containing the names of the arguments."""
         return astx.FunctionDef_co_varnames(self.original_ast) 
         
     @cypy.lazy(property)
     def local_variables(self):
-        """A tuple of strings containing all the local variables named in
-        this generic function."""
+        """A tuple of strings containing the names of the local variables."""
         return self.annotated_ast.local_variables
 
     @cypy.lazy(property)
     def all_variables(self):
-        """A tuple of strings containing all the variables (both arguments and
-        local variables) named by or in this function::
-        
-            self.all_variables == cons.ed(self.arg_names, self.local_variables)
-            
-        """
+        """A tuple of strings containing the names of all variables (both 
+        arguments and local variables)."""
         return self.annotated_ast.all_variables
+    
+    @cypy.lazy(property)
+    def name(self):
+        """The function's name."""
+        return self.annotated_ast.name
 
-    def compile(self, *arg_types):
+    def compile(self, target, *arg_types):
         """Creates a :class:`concrete function <ConcreteFn>` with the provided
         argument types."""
-        return ConcreteFn(self, arg_types)
+        return ConcreteFn(self, arg_types, target)
         
     @cypy.lazy(property)
     def clq_type(self):
-        return GenericFnType(self)
+        return self.Type(self)
 cypy.interned(GenericFn)
 
 class ConcreteFn(object):
@@ -153,9 +151,12 @@ class ConcreteFn(object):
     
     Concrete functions are immutable and interned.
     """
-    def __init__(self, generic_fn, arg_types):
+    # TODO: review this
+    def __init__(self, generic_fn, arg_types, backend):
         self.generic_fn = generic_fn
         self.arg_types = arg_types
+        self.backend = backend
+        
         self.arg_map = cypy.frozendict(zip(generic_fn.arg_names, arg_types))
         
     @cypy.setonce(property)
@@ -176,26 +177,36 @@ class ConcreteFn(object):
     def arg_types(self, val):
         self._arg_types = val
         
+    @cypy.setonce(property)
+    def backend(self):
+        """The backend language."""
+        return self._backend
+    
+    @backend.setter
+    def backend(self, val):
+        self._backend = val
+        
     @cypy.lazy(property)
     def typed_ast(self):
         """The typed abstract syntax tree for this function."""
-        visitor = self._visitor = internals.ConcreteFnVisitor(self)
+        backend = self.backend
+        visitor = self._visitor = internals.ConcreteFnVisitor(self, backend)
         return visitor.visit(self._generic_fn.annotated_ast)
     
     @cypy.lazy(property)
     def program_items(self):
         """A list of all program items needed by this concrete function."""
-        return tuple(self.typed_ast.program_items)
+        return tuple(self.typed_ast.context.program_items)
     
     @cypy.lazy(property)
     def program_item(self):
         """The program item corresponding to this function."""
-        return self.typed_ast.program_item
+        return self.typed_ast.context.program_item
     
     @cypy.lazy(property)
     def return_type(self):
         """The return type of this function."""
-        return self.typed_ast.return_type
+        return self.typed_ast.context.return_type
     
     @cypy.lazy(property)
     def name(self):
@@ -204,7 +215,7 @@ class ConcreteFn(object):
     
     @cypy.lazy(property)
     def clq_type(self):
-        return ConcreteFnType(self)
+        return self.Type(self)
 cypy.interned(ConcreteFn)
 
 class Type(object):
@@ -218,26 +229,304 @@ class Type(object):
     def __repr__(self):
         return str(self)
     
-    # TODO: remove _ before these
-    # TODO: list all possibilities here
+    def observe(self, context, node):
+        """Called when this type has been assigned to an expression, given by 
+        ``node``."""
+        pass
     
-    def _generate_Assign(self, context, target, value):
-        context.body_code.append((context.visit(target).code, " = ",
-                                  context.visit(value).code, ";\n"))
+    def resolve_Attribute(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support attribute access." %  
+            self.name, node.value)
+        
+    def generate_Attribute(self, context, node):
+        raise CodeGenerationError(
+            "Type '%s' does not support attribute access." % 
+            self.name, node.value) 
+        
+    def resolve_Subscript(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support subscript access." % 
+            self.name, node.value)
+        
+    def generate_Subscript(self, context, node):
+        raise CodeGenerationError(
+            "Type '%s' does not support subscript access." % 
+            self.name, node.value)
+        
+    def resolve_UnaryOp(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support any unary operations." % 
+            self.name, node.operand)
+        
+    def generate_UnaryOp(self, context, node):
+        raise CodeGenerationError(
+            "Type '%s' does not support any unary operations." % 
+            self.name, node.operand)
     
-    def _resolve_MultipleAssignment_prev(self, context, new):
-        if self is new: return self
+    def resolve_BinOp(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support any binary operations." %
+            self.name, node.left)
+        
+    def generate_BinOp(self, context, node):
+        raise CodeGenerationError(
+            "Type '%s' does not support any binary operations." %
+            self.name, node.left)
+        
+    def resolve_Compare(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support comparisons." % 
+            self.name, node.left)
+        
+    def generate_Compare(self, context, node):
+        raise CodeGenerationError(
+            "Type '%s' does not support comparisons." %
+            self.name, node.left)
+        
+    def resolve_BoolOp(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support any boolean operations." % 
+            self.name, node.values[0])
+        
+    def generate_BoolOp(self, context, node):
+        raise CodeGenerationError(
+            "Type '%s' does not support any boolean operations." %
+            self.name, node.values[0])
+        
+    def resolve_Call(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support the call operation." % 
+            self.name, node.func)
+        
+    def generate_Call(self, context, node):
+        raise CodeGenerationError(
+            "Type '%s' does not support the call operation." % 
+            self.name, node.func)
+        
+    def validate_Return(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support the 'return' statement." % 
+            self.name, node.value)
+        
+    def generate_Return(self, context, node):
+        raise CodeGenerationError(
+            "Type '%s' does not support the 'return' statement." % 
+            self.name, node.func)
+        
+    def resolve_MultipleAssignment(self, context, node):
+        new_type = node.new.unresolved_type.resolve(context)
+        if self == new_type:
+            return new_type
+        else:
+            raise TypeResolutionError(
+                "Multiple assignment with incompatible types: %s, %s." % 
+                (self.name, new_type.name), node)
+            
+    def validate_Assign(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support assignment to an identifier." % 
+            self.name, node.target)
+        
+    def generate_Assign(self, context, node):
+        context.backend.generate_Assign(context, node)
+        
+    def validate_AssignAttribute(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support assignment to an attribute." % 
+            self.name, node.targets[0].value)
 
-class VoidType(Type):
-    """The type of :obj:`void`."""
-    def __init__(self):
-        Type.__init__(self, "void")
-cypy.interned(VoidType)
+    def generate_AssignAttribute(self, context, node):
+        raise CodeGenerationError(
+            "Type '%s' does not support assignment to an attribute." % 
+            self.name, node.targets[0].value)
+        
+    def validate_AssignSubscript(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support assignment to a subscript." % 
+            self.name, node.targets[0].value)
+        
+    def generate_AssignSubscript(self, context, node):
+        raise CodeGenerationError(
+            "Type '%s' does not support assignment to a subscript." % 
+            self.name, node.targets[0].value)
 
-void = VoidType()
-"""Functions that do not return a value are given the ``void`` return type."""
+    def validate_AugAssign(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support augmented assignment to an identifier." % 
+            self.name, node.target)
+
+    def generate_AugAssign(self, context, node):
+        raise CodeGenerationError(
+            "Type '%s' does not support augmented assignment to an identifier." %
+            self.name, node.target)
+
+    def validate_AugAssignAttribute(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support augmented assignment to an attribute." % 
+            self.name, node.target.value)
+  
+    def generate_AugAssignAttribute(self, context, node):
+        raise CodeGenerationError(
+            "Type '%s' does not support augmented assignment to an attribute." % 
+            self.name, node.target.value)
+        
+    def validate_AugAssignSubscript(self, context, node):
+        raise TypeResolutionError(
+            "Type '%s' does not support augmented assignment to a subscript." % 
+            self.name, node.target.value)
+        
+    def generate_AugAssignSubscript(self, context, node):
+        raise CodeGenerationError(
+            "Type '%s' does not support augmented assignment to a subscript." % 
+            self.name, node.target.value)
+            
+class Backend(object):
+    """Abstract base class for a backend language specification."""
+    def __init__(self, name):
+        self.name = name
+        
+    def init_context(self, context):
+        """Initializes a :class:`context <Context>`."""
+        pass
     
-class GenericFnType(Type):
+    def generate_program_item(self, context):
+        """Called to generate a :class:`program item <ProgramItem>` for a 
+        completed concrete function described by the provided context.
+        
+        The return value is automatically added assigned to the 
+        context.program_item attribute and added to context.program_items.
+        """
+        raise Error("Backend must provide a method to generate program items.")
+        
+    def void_type(self, context, node):
+        raise TypeResolutionError(
+            "Backend does not specify a void type.", node) 
+        
+    def resolve_Num(self, context, node):
+        raise TypeResolutionError(
+            "Backend cannot handle raw numeric literals.", node)
+        
+    def generate_Num(self, context, node):
+        raise CodeGenerationError(
+            "Backend cannot handle raw numeric literals.", node)
+        
+    def resolve_Str(self, context, node):
+        raise TypeResolutionError(
+            "Backend cannot handle raw string literals.", node)
+    
+    def generate_Str(self, context, node):
+        raise CodeGenerationError(
+            "Backend cannot handle raw string literals.", node)
+    
+    def generate_For(self, context, node):
+        raise CodeGenerationError(
+            "Backend does not support 'for' loops.", node)
+        
+    def generate_While(self, context, node):
+        raise CodeGenerationError(
+            "Backend does not support 'while' loops.", node)
+        
+    def generate_If(self, context, node):
+        raise CodeGenerationError(
+            "Backend does not support 'if' statements.", node)
+        
+    def generate_IfExp(self, context, node):
+        raise CodeGenerationError(
+            "Backend does not support 'if' expressions.", node)
+    
+    def generate_Expr(self, context, node):
+        raise CodeGenerationError(
+            "Backend does not support standalone expressions.", node)
+        
+    def generate_Pass(self, context, node):
+        raise CodeGenerationError(
+            "Backend does not support the 'pass' statement.", node)
+        
+    def generate_Break(self, context, node):
+        raise CodeGenerationError(
+            "Backend does not support the 'break' statement.", node)
+        
+    def generate_Continue(self, context, node):
+        raise CodeGenerationError(
+            "Backend does not support the 'continue' statement.", node)
+        
+    def generate_Exec(self, context, node):
+        raise CodeGenerationError(
+            "Backend does not support the 'exec' statement.", node)
+        
+    def generate_op(self, context, node):
+        raise CodeGenerationError(
+            "Backend does not support operators.", node)
+
+class Context(object):
+    """Contains contextual information that is used during type resolution 
+    and code generation. 
+    
+    User-defined types may read and write to the context, although care should 
+    be taken to ensure that naming conflicts do not arise.
+    """
+    def __init__(self, visitor, concrete_fn, backend):
+        self.visitor = visitor
+        self.concrete_fn = concrete_fn
+        self.backend = backend
+
+        self.generic_fn = concrete_fn.generic_fn
+        
+        self.body = [ ]
+        self.stmts = [ ]
+        self.program_items = [ ]
+                
+        # used to provide base case for resolving multiple assignments
+        self._resolving_name = None
+        self._multiple_assignment_prev = { }
+        
+        backend.init_context(self)
+        
+    def visit(self, node):
+        return self.visitor.visit(node)
+    
+    def observe(self, clq_type, node):
+        clq_type.observe(self, node)
+        return clq_type
+        
+    tab = staticmethod(cg.CG.tab)
+    untab = staticmethod(cg.CG.untab)
+
+class ProgramItem(object):
+    """Represents a top-level item in the generated source code."""
+    def __init__(self, name, code):
+        self.name = name
+        self.code = code
+        
+    name = None
+    """The name of the item, if it has a name, or None."""
+    
+    code = None
+    """The source code associated with this item."""
+
+class Error(Exception):
+    """Base class for errors in cl.oquence."""
+    
+class InvalidOperationError(Error):
+    """Raised if an invalid operation is observed in a generic function."""
+    def __init__(self, message, node):
+        self.message = message
+        self.node = node
+
+class TypeResolutionError(Error):
+    """Raised to indicate an error during type resolution."""
+    def __init__(self, message, node):
+        self.message = message
+        self.node
+        
+class CodeGenerationError(Error):
+    """Raised to indicate an error during code generation."""
+    def __init__(self, message, node):
+        self.message = message
+        self.node = node
+
+class _GenericFnType(Type):
     """Each generic function has a corresponding instance of GenericFnType."""
     def __init__(self, generic_fn):
         Type.__init__(self, generic_fn.name)
@@ -246,11 +535,12 @@ class GenericFnType(Type):
     def _resolve_Call(self, context, func, args):
         arg_types = tuple(context._resolve_type(arg.unresolved_type)
                           for arg in args)
-        concrete_fn = self.generic_fn.compile(*arg_types)
+        concrete_fn = self.generic_fn.compile(context.backend, *arg_types)
         return concrete_fn.return_type
-cypy.interned(GenericFnType)
+cypy.interned(_GenericFnType)
+GenericFn.Type = _GenericFnType
 
-class ConcreteFnType(Type):
+class _ConcreteFnType(Type):
     """Each concrete function uniquely inhabits a ConcreteFnType."""
     def __init__(self, concrete_fn):
         Type.__init__(self, concrete_fn.name)
@@ -264,41 +554,14 @@ class ConcreteFnType(Type):
         provided_arg_types = tuple(context._resolve_type(arg.unresolved_type)
                                    for arg in args)
         if fn_arg_types != provided_arg_types:
-            raise ConcreteTypeError(
+            raise TypeResolutionError(
                 "Argument types are not compatible. Got %s, expected %s." % 
                 (str(fn_arg_types), str(provided_arg_types)))
         
         # everything looks okay, return 
         return concrete_fn.return_type
-cypy.interned(ConcreteFnType)
-
-class InvalidOperationError(Error):
-    """Raised if an invalid operation is observed in a generic function."""
-    def __init__(self, message, node):
-        self.message = message
-        self.node = node
-
-class ConcreteTypeError(Error):
-    """Raised to indicate a type error in a concrete cl.oquence function."""
-    def __init__(self, message):
-        self.message = message
-
-def is_valid_varname(id):
-    """Returns a boolean indicating whether id can be used as a variable name 
-    in cl.oquence code."""
-    return True
-
-class ProgramItem(object):
-    """Represents a top-level item in the target program."""
-    def __init__(self, name, code):
-        self.name = name
-        self.code = code
-        
-    name = None
-    """The name of the item, if it has a name, or None."""
-    
-    code = None
-    """The source code associated with this item."""
+cypy.interned(_ConcreteFnType)
+ConcreteFn.Type = _ConcreteFnType
 
 # placed at the end because the internals use the definitions above
 import internals 

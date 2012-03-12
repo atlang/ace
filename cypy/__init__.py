@@ -639,6 +639,12 @@ def merge_dicts_into(target, *dicts):
         target.update(d)
     return target
 
+def make_symmetric(dict):
+    """Makes the given dictionary symmetric. Values are assumed to be unique."""
+    for key, value in dict.items():
+        dict[value] = key
+    return dict
+
 no_default = object()
 """Useful semantic token to test (using `is`)
 
@@ -1554,7 +1560,7 @@ _NotDefined = object() # sentinel for when __new__ or __init__ are not defined
 ##############################################################################
 ## Strings and Regular Expressions
 ##############################################################################
-def string_escape(string):
+def string_escape(string, delimiter='"'):
     """Turns special characters into escape sequences in the provided string.
 
     Supports both byte strings and unicode strings properly. Any other values
@@ -1569,12 +1575,21 @@ def string_escape(string):
     None
     """
     if isinstance(string, str):
-        return string.encode("string-escape")
+        escaped = string.encode("string-escape")
     elif isinstance(string, unicode):
-        return unicode(string.encode("unicode-escape"))
+        escaped = unicode(string.encode("unicode-escape"))
     else:
-        return None
+        raise Error("Unexpected string type.")
+    return delimiter + escape_quotes(escaped, delimiter) + delimiter
 
+def escape_quotes(string, quote_type='"'):
+    if isinstance(string, str):
+        return string.replace(quote_type, "\\" + quote_type)
+    elif isinstance(string, unicode):
+        return string.replace(quote_type, unicode("\\") + quote_type)
+    else:
+        raise Error("Unexpected string type.")
+    
 def to_file(str, filename, mode='w'):
     f = open(filename, mode)
     f.write(str)
@@ -1826,6 +1841,74 @@ class stack_lookup(object):
         """Convenience method for popping a dictionary from the stack."""
         return self.dict_stack.pop()
 
+from collections import MutableMapping
+
+class OrderedDict(dict, MutableMapping):
+
+    # Methods with direct access to underlying attributes
+
+    def __init__(self, *args, **kwds):
+        if len(args) > 1:
+            raise TypeError('expected at 1 argument, got %d', len(args))
+        if not hasattr(self, '_keys'):
+            self._keys = []
+        self.update(*args, **kwds)
+
+    def clear(self):
+        del self._keys[:]
+        dict.clear(self)
+
+    def __setitem__(self, key, value):
+        if key not in self:
+            self._keys.append(key)
+        dict.__setitem__(self, key, value)
+
+    def __delitem__(self, key):
+        dict.__delitem__(self, key)
+        self._keys.remove(key)
+
+    def __iter__(self):
+        return iter(self._keys)
+
+    def __reversed__(self):
+        return reversed(self._keys)
+
+    def popitem(self):
+        if not self:
+            raise KeyError
+        key = self._keys.pop()
+        value = dict.pop(self, key)
+        return key, value
+
+    def __reduce__(self):
+        items = [[k, self[k]] for k in self]
+        inst_dict = vars(self).copy()
+        inst_dict.pop('_keys', None)
+        return (self.__class__, (items,), inst_dict)
+
+    # Methods with indirect access via the above methods
+
+    setdefault = MutableMapping.setdefault
+    update = MutableMapping.update
+    pop = MutableMapping.pop
+    keys = MutableMapping.keys
+    values = MutableMapping.values
+    items = MutableMapping.items
+
+    def __repr__(self):
+        pairs = ', '.join(map('%r: %r'.__mod__, self.items()))
+        return '%s({%s})' % (self.__class__.__name__, pairs)
+
+    def copy(self):
+        return self.__class__(self)
+
+    @classmethod
+    def fromkeys(cls, iterable, value=None):
+        d = cls()
+        for key in iterable:
+            d[key] = value
+        return d
+    
 ##############################################################################
 ## Naming
 ##############################################################################
