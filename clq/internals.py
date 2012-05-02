@@ -298,33 +298,33 @@ class GenericFnVisitor(_ast.NodeVisitor):
         operand = self.visit(node.operand)
         op = self.visit(node.op)
         
-        return astx.copy_node(node,
+        new_node = astx.copy_node(node,
             op=op,
-            operand=operand,
-            unresolved_type=UnaryOpURT(node)
-        )
+            operand=operand)
+        new_node.unresolved_type = UnaryOpURT(new_node)
+        return new_node
     
     def visit_BinOp(self, node):
         left = self.visit(node.left)
         op = self.visit(node.op)
         right = self.visit(node.right)
         
-        return astx.copy_node(node,
+        new_node = astx.copy_node(node,
             left=left,
             op=op,
-            right=right,
-            unresolved_type=BinOpURT(node)
-        )
+            right=right)
+        new_node.unresolved_type = BinOpURT(new_node)
+        return new_node
     
     def visit_BoolOp(self, node):
         op = self.visit(node.op)
         values = [self.visit(expr) for expr in node.values]
         
-        return astx.copy_node(node,
+        new_node = astx.copy_node(node,
             op=op,
-            values=values,
-            unresolved_type=BoolOpURT(node)  
-        )
+            values=values)
+        new_node.unresolved_type = BoolOpURT(new_node)
+        return new_node  
     
     def visit_Compare(self, node):
         comparators = node.comparators
@@ -336,12 +336,12 @@ class GenericFnVisitor(_ast.NodeVisitor):
         ops = [self.visit(node.op[0])]
         comparators = [self.visit(comparators[0])]
             
-        return astx.copy_node(node,
+        new_node = astx.copy_node(node,
             left=left,
             ops=ops,
-            comparators=comparators,
-            unresolved_type=CompareURT(node)
-        )
+            comparators=comparators)
+        new_node.unresolved_type=CompareURT(new_node)
+        return new_node
 
     ######################################################################
     ## Other Expressions
@@ -351,12 +351,12 @@ class GenericFnVisitor(_ast.NodeVisitor):
         body = self.visit(node.body)
         orelse = self.visit(node.orelse)
         
-        return astx.copy_node(node,
+        new_node = astx.copy_node(node,
             test=test,
             body=body,
-            orelse=orelse,
-            unresolved_type=MultipleAssignmentURT(body, orelse, node)
-        )
+            orelse=orelse)
+        new_node.unresolved_type=MultipleAssignmentURT(body, orelse, new_node)
+        return new_node
 
     def visit_Call(self, node):                                                     
         if node.keywords:
@@ -371,39 +371,38 @@ class GenericFnVisitor(_ast.NodeVisitor):
         
         func = self.visit(node.func)        
         args = [ self.visit(arg) for arg in node.args ]
-        unresolved_type = CallURT(node)
         
-        return astx.copy_node(node,
+        new_node = astx.copy_node(node,
             func=func, 
             args=args, 
             keywords=[], 
             starargs=None, 
-            kwargs=None, 
-            unresolved_type=unresolved_type
-        )
+            kwargs=None)
+        new_node.unresolved_type = CallURT(new_node)
+        return new_node
     
     def visit_Attribute(self, node):
         value = self.visit(node.value)
         ctx = self.visit(node.ctx)
         
-        return astx.copy_node(node,
+        new_node = astx.copy_node(node,
             value=value, 
             attr=node.attr, 
-            ctx=ctx, 
-            unresolved_type=AttributeURT(node)
-        )
+            ctx=ctx)
+        new_node.unresolved_type=AttributeURT(new_node)
+        return new_node
     
     def visit_Subscript(self, node):
         value = self.visit(node.value)
         slice = self.visit(node.slice)
         ctx = self.visit(node.ctx)
         
-        return astx.copy_node(node,
+        new_node = astx.copy_node(node,
             value=value, 
             slice=slice, 
-            ctx=ctx,
-            unresolved_type=SubscriptURT(node)
-        )
+            ctx=ctx)
+        new_node.unresolved_type=SubscriptURT(new_node)
+        return new_node
     
     def visit_Ellipsis(self, node):
         # here in case a custom type wants to support it
@@ -441,10 +440,10 @@ class GenericFnVisitor(_ast.NodeVisitor):
     def visit_Index(self, node):
         value = self.visit(node.value)
         
-        return astx.copy_node(node,
-            value=value,
-            unresolved_type=value.unresolved_type
-        )
+        new_node = astx.copy_node(node,
+            value=value)
+        new_node.unresolved_type=value.unresolved_type
+        return new_node
         
     def visit_Load(self, node):
         return astx.copy_node(node)
@@ -500,14 +499,14 @@ class GenericFnVisitor(_ast.NodeVisitor):
         return name
         
     def visit_Num(self, node):
-        return astx.copy_node(node,
-            unresolved_type=NumURT(node)
-        )
+        new_node = astx.copy_node(node)
+        new_node.unresolved_type = NumURT(node)
+        return new_node
     
     def visit_Str(self, node):
-        return astx.copy_node(node,
-            unresolved_type=StrURT(node)
-        )  
+        new_node = astx.copy_node(node)
+        new_node.unresolved_type = StrURT(node)
+        return new_node
     
 ##############################################################################
 ## Unresolved Types
@@ -617,7 +616,7 @@ class BinOpURT(UnresolvedType):
     def __repr__(self):
         node = self.node
         return "BinOp(%s, %s, %s)" % (repr(node.left.unresolved_type),
-                                        type(node.op).__name,
+                                        type(node.op).__name__,
                                         repr(node.right.unresolved_type))
         
     @cypy.memoize
@@ -905,7 +904,7 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
     ######################################################################
     def _visit_op(self, node):
         context = self.context
-        return context.backend.generate_op(self, context, node)
+        return context.backend.generate_op(context, node)
     
     visit_Add = _visit_op
     visit_Sub = _visit_op

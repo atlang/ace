@@ -1409,11 +1409,11 @@ def is_senior_subclass(obj, cls, testcls):
             if issubclass(base, testcls):
                 return False
             
-class interned(object):  
+class intern(object):  
     # a class just so the name mangling mechanisms are invoked, deleted below
     
     @staticmethod
-    def interned(cls_):
+    def intern(cls_):
         """Transforms the provided class into an interned class.
         
         That is, initializing the class multiple times with the same arguments 
@@ -1422,13 +1422,13 @@ class interned(object):
         first time for each unique set of arguments.
         
         This means that mutations will effectively be shared by all "instances" 
-        of  the class which shared initialization arguments. This might be 
+        of the class which shared initialization arguments. This might be 
         useful for storing metadata, for example.
         
             >>> class N(object):
             ...     def __init__(self, n):
             ...         self.n = n
-            >>> N = interned(N)
+            >>> N = intern(N)
             >>> five = N(5)
             >>> five2 = N(5)
             >>> five is five2
@@ -1440,7 +1440,7 @@ class interned(object):
         To enforce immutability of particular attributes, see the setonce 
         property modifier.
             
-        The use of the term "interned" comes from the practice of string 
+        The use of the term "intern" comes from the practice of string 
         interning used widely in programming languages, including Python. Look 
         it up.
         
@@ -1448,9 +1448,9 @@ class interned(object):
         this:
         
             >>> class Test(object): pass
-            >>> Test = interned(Test)
+            >>> Test = intern(Test)
         
-        .. Note:: Subclassing of interned classes with different __init__
+        .. Note:: Subclassing of intern classes with different __init__
                   arguments is tricky and probably should not be done if you 
                   don't understand precisely how this works.
                   
@@ -1460,7 +1460,7 @@ class interned(object):
                   probably just do that with a function.
 
         .. Note:: You can override the hash function used by providing a value
-                  for __init__._interned__hash_function. This should take None
+                  for __init__._intern__hash_function. This should take None
                   as the first argument (substituting for self) and then *args
                   and **kwargs (or your particular signature for __init__) and
                   produce a hash or hashable value.
@@ -1483,7 +1483,7 @@ class interned(object):
             
         # define an override for __new__ which looks in the cache first
         def __new__(cls, *args, **kwargs):
-            """Override used by cypy.interned to cache instances of this class."""
+            """Override used by cypy.intern to cache instances of this class."""
             
             # check cache
             __init__ = cls.__init__
@@ -1540,16 +1540,16 @@ class interned(object):
         cls_.__static_new__ = __static_new__
         cls_.__new__ = __static_new__
         return cls_
-interned = interned.interned
+intern = intern.intern
 def _dummy_init(self, *args, **kwargs): #@UnusedVariable
     """Prevents __init__ from being called if returning a obj copy."""
     cls = type(self)
-    old_init = cls._interned__old_init
+    old_init = cls._intern__old_init
     if old_init is _NotDefined:
         del cls.__init__
     else:
         cls.__init__ = old_init
-    del cls._interned__old_init
+    del cls._intern__old_init
     
 @staticmethod
 def _null_new(cls, *args, **kwargs): #@UnusedVariable

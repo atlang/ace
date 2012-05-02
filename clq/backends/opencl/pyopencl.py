@@ -1,10 +1,10 @@
 # TODO: License header
 # TODO: Module documentation
 
-import numpy as _numpy
 import cypy
+import numpy as _numpy
 import pyopencl as _cl
-from pyopencl import *
+from pyopencl import * #@UnusedWildImport
 
 class Error(Error):
     """Base class for errors in ``cl.oquence.pyopencl``. 
@@ -28,7 +28,7 @@ class Platform(Platform):
     @classmethod
     def get_platforms(cls):
         """Returns a tuple of available platforms on this system."""
-        return tuple(get_platforms())
+        return tuple(_cl.get_platforms())
             
     @classmethod
     def print_list(cls):

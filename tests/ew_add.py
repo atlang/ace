@@ -1,12 +1,13 @@
 import numpy
 import numpy.linalg as la
-import cl
-import cl.oquence
+import clq
+import clq.backends.opencl.pyopencl as cl
+from clq.backends.opencl import get_global_id
 
 a = numpy.random.rand(50000).astype(numpy.float32)
 b = numpy.random.rand(50000).astype(numpy.float32)
 
-@cl.oquence.fn
+@clq.fn
 def ew_add(a, b, dest):
     gid = get_global_id(0)
     dest[gid] = a[gid] + b[gid]

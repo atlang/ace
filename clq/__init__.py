@@ -81,7 +81,7 @@ class GenericFn(object):
     It is generic in the sense that its arguments have not yet been assigned 
     concrete types.
     
-    Generic functions are immutable and interned.
+    Generic functions are immutable and intern.
     """
     def __init__(self, ast):
         self.original_ast = ast
@@ -143,13 +143,13 @@ class GenericFn(object):
     @cypy.lazy(property)
     def clq_type(self):
         return self.Type(self)
-cypy.interned(GenericFn)
+cypy.intern(GenericFn)
 
 class ConcreteFn(object):
     """A concrete function is made from a generic function by binding the 
     arguments to concrete types.
     
-    Concrete functions are immutable and interned.
+    Concrete functions are immutable and intern.
     """
     # TODO: review this
     def __init__(self, generic_fn, arg_types, backend):
@@ -216,7 +216,7 @@ class ConcreteFn(object):
     @cypy.lazy(property)
     def clq_type(self):
         return self.Type(self)
-cypy.interned(ConcreteFn)
+cypy.intern(ConcreteFn)
 
 class Type(object):
     """Base class for cl.oquence types."""
@@ -537,7 +537,7 @@ class _GenericFnType(Type):
                           for arg in args)
         concrete_fn = self.generic_fn.compile(context.backend, *arg_types)
         return concrete_fn.return_type
-cypy.interned(_GenericFnType)
+cypy.intern(_GenericFnType)
 GenericFn.Type = _GenericFnType
 
 class _ConcreteFnType(Type):
@@ -560,7 +560,7 @@ class _ConcreteFnType(Type):
         
         # everything looks okay, return 
         return concrete_fn.return_type
-cypy.interned(_ConcreteFnType)
+cypy.intern(_ConcreteFnType)
 ConcreteFn.Type = _ConcreteFnType
 
 # placed at the end because the internals use the definitions above
