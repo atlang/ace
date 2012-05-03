@@ -189,6 +189,10 @@ class Context(Context):
         self.properties = properties
         self.dev_type = dev_type
         
+    devices = None
+    properties = None
+    dev_type = None
+        
     @classmethod
     def get_somehow(cls, interactive=True, platform=None):
         """Creates an instance of :class:`Context` bound to one device, somehow.
