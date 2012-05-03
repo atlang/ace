@@ -230,7 +230,7 @@ class Backend(clq.Backend):
 class Type(clq.Type):
         
     min_sizeof = None
-    max_siezof = None
+    max_sizeof = None
 
     def validate_Return(self, context, node):
         return # no error = ok
