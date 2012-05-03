@@ -221,128 +221,129 @@ class Backend(base_c.Backend):
     string_t = None # char.private_ptr
 
 #############################################################################
+## OpenCL Extension descriptors
+#############################################################################
+class Extension(object):
+    """An OpenCL extension descriptor.
+    
+    .. Note:: Not all known OpenCL extensions have been defined below. The
+              ones defined in the OpenCL spec are given, as well as a few 
+              others, but please feel free to contribute others. 
+    """
+    def __init__(self, name):
+        self.name = name
+
+    @property
+    def pragma_str(self):
+        """Returns the pragma needed to enable this extension."""
+        return "#pragma extension %s : enable" % self.name
+cypy.intern(Extension)
+
+cl_khr_fp64 = Extension("cl_khr_fp64")
+"""Standard 64-bit floating point extension.
+
+*See section 9.3 in the spec.*
+"""
+
+cl_khr_fp16 = Extension("cl_khr_fp16")
+"""Standard extension supporting use of the half type as a full type. 
+
+*See section 9.10 in the spec.*
+"""
+
+cl_khr_global_int32_base_atomics = Extension("cl_khr_global_int32_base_atomics")
+"""Standard 32-bit base atomic operations for global memory.
+
+*See section 9.5 in the spec.*
+"""
+
+cl_khr_global_int32_extended_atomics = \
+    Extension("cl_khr_global_int32_extended_atomics")
+"""Standard 32-bit extended atomic operations for global memory.
+
+*See section 9.5 in the spec.*
+"""
+
+cl_khr_local_int32_base_atomics = Extension("cl_khr_local_int32_base_atomics")
+"""Standard 32-bit base atomic operations for local memory.
+
+*See section 9.6 in the spec.*
+"""
+
+cl_khr_local_int32_extended_atomics = \
+    Extension("cl_khr_local_int32_extended_atomics")
+"""Standard 32-bit extended atomic operations for local memory.
+
+*See section 9.6 in the spec.*
+"""
+
+int32_global_atomics_extensions = (cl_khr_global_int32_base_atomics,
+                                   cl_khr_global_int32_extended_atomics)
+"""Tuple containing both the base and extended 32-bit base atomic extensions."""
+
+int32_local_atomics_extensions = (cl_khr_local_int32_base_atomics,
+                                  cl_khr_local_int32_extended_atomics)
+"""Tuple containing both the base and extended 32-bit base atomic extensions."""
+
+int32_atomics_extensions = (cl_khr_global_int32_base_atomics,
+                            cl_khr_global_int32_extended_atomics,
+                            cl_khr_local_int32_base_atomics,
+                            cl_khr_local_int32_extended_atomics)
+"""Tuple containing all 32-bit atomics extensions."""
+
+cl_khr_int64_base_atomics = Extension("cl_khr_int64_base_atomics")
+"""Standard 64-bit base atomic operations.
+
+*See section 9.7 in the spec.*
+"""
+
+cl_khr_int64_extended_atomics = Extension("cl_khr_int64_extended_atomics")
+"""Standard 64-bit extended atomic operations.
+
+*See section 9.7 in the spec.*
+"""
+
+int64_atomics_extensions = (cl_khr_int64_base_atomics,
+                            cl_khr_int64_extended_atomics)
+"""Tuple containing all 64-bit atomics extensions."""
+
+cl_khr_byte_addressable_store = Extension("cl_khr_byte_addressable_store")
+"""Standard extension to support byte addressable arrays.
+
+*See section 9.9 in the spec.*
+"""
+
+cl_khr_3d_image_writes = Extension("cl_khr_3d_image_writes")
+"""Standard extension to support 3D image memory objects.
+
+*See section 9.8 in the spec.*
+"""
+
+khr_extensions = cypy.cons.ed(int32_atomics_extensions,                           #@UndefinedVariable
+                              int64_atomics_extensions, 
+                              (cl_khr_byte_addressable_store,))
+
+cl_APPLE_gl_sharing = Extension("cl_APPLE_gl_sharing")
+"""Apple extension for OpenGL sharing."""
+
+cl_APPLE_SetMemObjectDestructor = Extension("cl_APPLE_SetMemObjectDestructor")
+"""Apple SetMemObjectDestructor extension."""
+
+cl_APPLE_ContextLoggingFunctions = Extension("cl_APPLE_ContextLoggingFunctions")
+"""Apple ContextLoggingFunctions extension."""
+
+APPLE_extensions = (cl_APPLE_gl_sharing, 
+                    cl_APPLE_SetMemObjectDestructor,
+                    cl_APPLE_ContextLoggingFunctions)
+"""Tuple containing all Apple extensions."""
+
+#############################################################################
 ## Versions
 #############################################################################
 #OpenCL_1_0 = cypy.Version("OpenCL", [("major", 1), ("minor", 0)])
 #"""A :class:`Version <cypy.Version>` descriptor representing OpenCL 1.0."""
 #
-##############################################################################
-### OpenCL Extension descriptors
-##############################################################################
-#class Extension(object):
-#    """An OpenCL extension descriptor.
-#    
-#    .. Note:: Not all known OpenCL extensions have been defined below. The
-#              ones defined in the OpenCL spec are given, as well as a few 
-#              others, but please feel free to contribute others. 
-#    """
-#    def __init__(self, name):
-#        self.name = name
-#
-#    @property
-#    def pragma_str(self):
-#        """Returns the pragma needed to enable this extension."""
-#        return "\n#pragma extension %s : enable\n" % self.name
-#cypy.interned(Extension)
-#
-#cl_khr_fp64 = Extension("cl_khr_fp64")
-#"""Standard 64-bit floating point extension.
-#
-#*See section 9.3 in the spec.*
-#"""
-#
-#cl_khr_fp16 = Extension("cl_khr_fp16")
-#"""Standard extension supporting use of the half type as a full type. 
-#
-#*See section 9.10 in the spec.*
-#"""
-#
-#cl_khr_global_int32_base_atomics = Extension("cl_khr_global_int32_base_atomics")
-#"""Standard 32-bit base atomic operations for global memory.
-#
-#*See section 9.5 in the spec.*
-#"""
-#
-#cl_khr_global_int32_extended_atomics = \
-#    Extension("cl_khr_global_int32_extended_atomics")
-#"""Standard 32-bit extended atomic operations for global memory.
-#
-#*See section 9.5 in the spec.*
-#"""
-#
-#cl_khr_local_int32_base_atomics = Extension("cl_khr_local_int32_base_atomics")
-#"""Standard 32-bit base atomic operations for local memory.
-#
-#*See section 9.6 in the spec.*
-#"""
-#
-#cl_khr_local_int32_extended_atomics = \
-#    Extension("cl_khr_local_int32_extended_atomics")
-#"""Standard 32-bit extended atomic operations for local memory.
-#
-#*See section 9.6 in the spec.*
-#"""
-#
-#int32_global_atomics_extensions = (cl_khr_global_int32_base_atomics,
-#                                   cl_khr_global_int32_extended_atomics)
-#"""Tuple containing both the base and extended 32-bit base atomic extensions."""
-#
-#int32_local_atomics_extensions = (cl_khr_local_int32_base_atomics,
-#                                  cl_khr_local_int32_extended_atomics)
-#"""Tuple containing both the base and extended 32-bit base atomic extensions."""
-#
-#int32_atomics_extensions = (cl_khr_global_int32_base_atomics,
-#                            cl_khr_global_int32_extended_atomics,
-#                            cl_khr_local_int32_base_atomics,
-#                            cl_khr_local_int32_extended_atomics)
-#"""Tuple containing all 32-bit atomics extensions."""
-#
-#cl_khr_int64_base_atomics = Extension("cl_khr_int64_base_atomics")
-#"""Standard 64-bit base atomic operations.
-#
-#*See section 9.7 in the spec.*
-#"""
-#
-#cl_khr_int64_extended_atomics = Extension("cl_khr_int64_extended_atomics")
-#"""Standard 64-bit extended atomic operations.
-#
-#*See section 9.7 in the spec.*
-#"""
-#
-#int64_atomics_extensions = (cl_khr_int64_base_atomics,
-#                            cl_khr_int64_extended_atomics)
-#"""Tuple containing all 64-bit atomics extensions."""
-#
-#cl_khr_byte_addressable_store = Extension("cl_khr_byte_addressable_store")
-#"""Standard extension to support byte addressable arrays.
-#
-#*See section 9.9 in the spec.*
-#"""
-#
-#cl_khr_3d_image_writes = Extension("cl_khr_3d_image_writes")
-#"""Standard extension to support 3D image memory objects.
-#
-#*See section 9.8 in the spec.*
-#"""
-#
-#khr_extensions = cypy.cons.ed(int32_atomics_extensions,                           #@UndefinedVariable
-#                              int64_atomics_extensions, 
-#                              (cl_khr_byte_addressable_store,))
-#
-#cl_APPLE_gl_sharing = Extension("cl_APPLE_gl_sharing")
-#"""Apple extension for OpenGL sharing."""
-#
-#cl_APPLE_SetMemObjectDestructor = Extension("cl_APPLE_SetMemObjectDestructor")
-#"""Apple SetMemObjectDestructor extension."""
-#
-#cl_APPLE_ContextLoggingFunctions = Extension("cl_APPLE_ContextLoggingFunctions")
-#"""Apple ContextLoggingFunctions extension."""
-#
-#APPLE_extensions = (cl_APPLE_gl_sharing, 
-#                    cl_APPLE_SetMemObjectDestructor,
-#                    cl_APPLE_ContextLoggingFunctions)
-#"""Tuple containing all Apple extensions."""
-#
+
 ##############################################################################
 ### Data type descriptors
 ##############################################################################
