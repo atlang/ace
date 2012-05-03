@@ -11,7 +11,9 @@ _globals = globals() # used to create lists of types below
 # Types
 ################################################################################
 class Type(base_c.Type):
-    pass
+    def sizeof_for(self, device):
+        # TODO: Implement this
+        return self.max_sizeof
 
 class ScalarType(base_c.ScalarType, Type):
     ptr = None
