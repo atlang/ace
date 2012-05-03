@@ -424,6 +424,10 @@ class Buffer(Buffer):
         self.flags = flags
         self.size = size
         
+    context = None
+    flags = None
+    size = None
+        
     @classmethod
     def shaped(cls, ctx, shape=None, cl_dtype=None, order=None,
                flags=mem_flags.READ_WRITE, hostbuf=None, constant=False):
