@@ -5,6 +5,7 @@ import cypy
 import numpy as _numpy
 import pyopencl as _cl
 from pyopencl import * #@UnusedWildImport
+import clq.backends.opencl as clqcl
 
 class Error(Error): 
     """Base class for errors in ``cl.oquence.pyopencl``. 
@@ -557,7 +558,7 @@ class Buffer(Buffer):
             return src.cl_dtype
         except AttributeError:
             try:
-                return to_cl_type[src.dtype]
+                return clqcl.to_cl_type[src.dtype]
             except (KeyError, AttributeError):
                 raise Error("No cl_dtype can be inferred from src.")
     

@@ -79,6 +79,24 @@ machine_independent_int_types = dict(
     (name, _globals[name]) for name in 
     ('char', 'uchar', 'short', 'ushort', 'int', 'uint', 'long', 'ulong'))
 
+try:
+    import numpy
+except ImportError:
+    pass
+else:
+    char.np_dtype = numpy.dtype('int8')
+    uchar.np_dtype = numpy.dtype('uint8')
+    short.np_dtype = numpy.dtype('int16')
+    ushort.np_dtype = numpy.dtype('uint16')
+    int.np_dtype = numpy.dtype('int32')
+    uint.np_dtype = numpy.dtype('uint32')
+    long.np_dtype = numpy.dtype('int64')
+    ulong.np_dtype = numpy.dtype('uint64')
+    
+    to_cl_type = { }
+    for cl_type in machine_independent_int_types.itervalues():
+        to_cl_type[cl_type.np_dtype] = cl_type
+
 # Machine-dependent integers
 #===============================================================================
 size_t = IntegerType("size_t")
@@ -136,6 +154,20 @@ double.min_sizeof = double.max_sizeof = 8
 
 float_types = dict((name, _globals[name]) for name in 
     ('half', 'float', 'double'))
+
+try:
+    import numpy
+except ImportError:
+    pass
+else:
+    half.np_dtype = None
+    float.np_dtype = numpy.dtype('float32')
+    double.np_dtype = numpy.dtype('float64')
+    
+    for cl_type in float_types.itervalues():
+        np_dtype = cl_type.np_dtype
+        if np_dtype is not None:
+            to_cl_type[np_dtype] = cl_type   
 
 scalar_types = cypy.merge_dicts(int_types,
                                 float_types)
