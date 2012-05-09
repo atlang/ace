@@ -2,6 +2,7 @@ import ast as _ast
 
 import cypy
 import cypy.astx as astx
+import clq
 from clq import TypeResolutionError
 import clq.backends.base_c as base_c
 
@@ -455,25 +456,19 @@ class BuiltinFn(object):
     def cl_type(self):
         return BuiltinFnType(self)
 
-class BuiltinFnType(Type):
+class BuiltinFnType(Type, clq.VirtualType):
     """The type of OpenCL builtin function stubs (:class:`BuiltinFn`)."""
     def __init__(self, builtin):
-        self.builtin = self.constant_value = builtin
+        Type.__init__(self, "BuiltinFnType(%s)" % builtin.name)
+        self.builtin = builtin
         
-    def __repr__(self):
-        return self.builtin.name
+    def resolve_Call(self, context, node):
+        arg_types = tuple(arg.unresolved_type.resolve(context)
+                          for arg in node.args)
+        return self.builtin.return_type_fn(*arg_types)
     
-    def _resolve_Call(self, visitor, func, args):
-        builtin = self.builtin
-        arg_types = tuple(visitor._resolve_type(arg.unresolved_type) 
-                          for arg in args)
-        return builtin.return_type_fn(*arg_types)
-    
-    def _generate_Call(self, visitor, node):
-        visit = visitor.visit
-        func = visitor.visit(node.func)
-        # TODO: Implement generate call
-        
+    def generate_Call(self, context, node):
+        return clq._generic_generate_Call(context, node)
 cypy.intern(BuiltinFnType)
 
 class BuiltinConstant(object):
