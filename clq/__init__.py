@@ -68,12 +68,10 @@ def from_source(src):
     ast = astx.extract_the(ast, _ast.FunctionDef)
     return GenericFn(ast)
 fn.from_source = from_source
-del from_source
 
 def from_ast(ast):
     return GenericFn(ast)
 fn.from_ast = from_ast
-del from_ast
 
 class GenericFn(object):
     """A generic cl.oquence function. 
@@ -141,7 +139,7 @@ class GenericFn(object):
         return ConcreteFn(self, arg_types, target)
         
     @cypy.lazy(property)
-    def clq_type(self):
+    def cl_type(self):
         return self.Type(self)
 cypy.intern(GenericFn)
 
@@ -214,7 +212,7 @@ class ConcreteFn(object):
         return self.program_item.name
     
     @cypy.lazy(property)
-    def clq_type(self):
+    def cl_type(self):
         return self.Type(self)
 cypy.intern(ConcreteFn)
 
@@ -381,6 +379,69 @@ class Type(object):
             "Type '%s' does not support augmented assignment to a subscript." % 
             self.name, node.target.value)
             
+class VirtualType(Type):
+    """Designates a type that does not have a concrete representation (e.g. 
+    singleton function types)."""
+
+def _generic_generate_Call(context, node):
+    arg_types = tuple(arg.unresolved_type.resolve(context)
+                      for arg in node.args)
+    args = tuple(context.visit(arg)
+                 for i, arg in enumerate(node.args)
+                 if not isinstance(arg_types[i], VirtualType))
+    func = context.visit(node.func)
+    
+    code = (func.code, "(",
+            cypy.join((arg.code for arg in args), ", "),
+            ")")
+    
+    return astx.copy_node(node,
+        args=args,
+        func=func,
+        
+        code=code) 
+
+class GenericFnType(VirtualType):
+    """Each generic function uniquely inhabits a GenericFnType."""
+    def __init__(self, generic_fn):
+        VirtualType.__init__(self, generic_fn.name)
+        self.generic_fn = generic_fn
+         
+    def resolve_Call(self, context, node):
+        arg_types = tuple(arg.unresolved_type.resolve(context)
+                          for arg in node.args)
+        concrete_fn = self.generic_fn.compile(context.backend, *arg_types)
+        return concrete_fn.return_type
+    
+    def generate_Call(self, context, node):
+        return _generic_generate_Call(context, node)
+
+cypy.intern(GenericFnType)
+GenericFn.Type = GenericFnType
+
+class ConcreteFnType(VirtualType):
+    """Each concrete function uniquely inhabits a ConcreteFnType."""
+    def __init__(self, concrete_fn):
+        VirtualType.__init__(self, concrete_fn.name)
+        self.concrete_fn = concrete_fn
+        
+    def resolve_Call(self, context, node):
+        arg_types = tuple(arg.unresolved_type.resolve(context)
+                          for arg in node.args)
+        concrete_fn = self.concrete_fn
+        fn_arg_types = concrete_fn.arg_types
+        if arg_types != fn_arg_types:
+            raise TypeResolutionError(
+                "Argument types are not compatible. Got %s, expected %s." %
+                (str(arg_types), str(fn_arg_types)), node)
+        
+        return concrete_fn.return_type
+    
+    def generate_Call(self, context, node):
+        return _generic_generate_Call(context, node)    
+cypy.intern(ConcreteFnType)
+ConcreteFn.Type = ConcreteFnType
+
 class Backend(object):
     """Abstract base class for a backend language specification."""
     def __init__(self, name):
@@ -518,50 +579,13 @@ class TypeResolutionError(Error):
     """Raised to indicate an error during type resolution."""
     def __init__(self, message, node):
         self.message = message
-        self.node
+        self.node = node
         
 class CodeGenerationError(Error):
     """Raised to indicate an error during code generation."""
     def __init__(self, message, node):
         self.message = message
         self.node = node
-
-class _GenericFnType(Type):
-    """Each generic function has a corresponding instance of GenericFnType."""
-    def __init__(self, generic_fn):
-        Type.__init__(self, generic_fn.name)
-        self.generic_fn = generic_fn
-         
-    def _resolve_Call(self, context, func, args):
-        arg_types = tuple(context._resolve_type(arg.unresolved_type)
-                          for arg in args)
-        concrete_fn = self.generic_fn.compile(context.backend, *arg_types)
-        return concrete_fn.return_type
-cypy.intern(_GenericFnType)
-GenericFn.Type = _GenericFnType
-
-class _ConcreteFnType(Type):
-    """Each concrete function uniquely inhabits a ConcreteFnType."""
-    def __init__(self, concrete_fn):
-        Type.__init__(self, concrete_fn.name)
-        self.concrete_fn = concrete_fn
-        
-    def _resolve_Call(self, context, func, args):
-        concrete_fn = self.concrete_fn
-        
-        # check argument types
-        fn_arg_types = concrete_fn.arg_types
-        provided_arg_types = tuple(context._resolve_type(arg.unresolved_type)
-                                   for arg in args)
-        if fn_arg_types != provided_arg_types:
-            raise TypeResolutionError(
-                "Argument types are not compatible. Got %s, expected %s." % 
-                (str(fn_arg_types), str(provided_arg_types)))
-        
-        # everything looks okay, return 
-        return concrete_fn.return_type
-cypy.intern(_ConcreteFnType)
-ConcreteFn.Type = _ConcreteFnType
 
 # placed at the end because the internals use the definitions above
 import internals 
