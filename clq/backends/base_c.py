@@ -648,8 +648,8 @@ class FloatType(ScalarType):
         if self == new_type:
             return new_type
         elif isinstance(new_type, FloatType):
-            if new.sizeof > self.sizeof:
-                return new
+            if new_type.sizeof > self.sizeof:
+                return new_type
             else:
                 return self
         elif isinstance(new_type, IntegerType):
