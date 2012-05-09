@@ -52,7 +52,7 @@ class GenericFnVisitor(_ast.NodeVisitor):
         args = self.visit(node.args)
         body = [ self.visit(stmt) for stmt in node.body ]
         if self.return_type is None:
-            self.return_type = VoidURT()
+            self.return_type = VoidURT(node)
         
         # return a copy of the root node with all the information as 
         # attributes
@@ -100,7 +100,7 @@ class GenericFnVisitor(_ast.NodeVisitor):
             # can think of the return value as just another value that
             # is being assigned to implicitly.
             self.return_type = MultipleAssignmentURT(cur_return_type, 
-                                                     return_type)
+                                                     return_type, node)
         
         return astx.copy_node(node, 
             value=value
@@ -142,7 +142,7 @@ class GenericFnVisitor(_ast.NodeVisitor):
         self.cur_assignment_type = None
         
         return astx.copy_node(node,
-            target=tmp_binop.target,
+            target=tmp_binop.left,
             op=tmp_binop.op,
             value=tmp_binop.right
         )
@@ -190,7 +190,7 @@ class GenericFnVisitor(_ast.NodeVisitor):
         init = self.visit(_ast.Assign(targets=[target], value=start))
         
         # to create the guard operation, we need a Load version of the target
-        target_load = astx.copy_node(target, ctx=self._Load)
+        target_load = astx.copy_node(target, ctx=_ast.Load())
         guard = self.visit(_ast.Compare(left=target_load, comparators=[stop], 
                                         ops=[_ast.Lt()]))
         
@@ -333,7 +333,7 @@ class GenericFnVisitor(_ast.NodeVisitor):
                 "Chained comparators are not supported.", node)
             
         left = self.visit(node.left)
-        ops = [self.visit(node.op[0])]
+        ops = [self.visit(node.ops[0])]
         comparators = [self.visit(comparators[0])]
             
         new_node = astx.copy_node(node,
@@ -482,7 +482,7 @@ class GenericFnVisitor(_ast.NodeVisitor):
                 if id in self.local_variables:
                     # multiple assignment of a local variable
                     self.local_variables[id] = MultipleAssignmentURT(
-                        current_type, self.cur_assignment_type)
+                        current_type, self.cur_assignment_type, node)
                 elif id in self.free_variables:
                     raise InvalidOperationError(
                         "Free variables cannot be assigned to.", node)
@@ -713,8 +713,7 @@ class NameURT(UnresolvedType):
                 prev_resolving_name = context._resolving_name
                 context._resolving_name = id
 
-                unresolved_type = var.unresolved_type
-                resolved_type = unresolved_type.resolve(context)
+                resolved_type = var.resolve(context)
                 
                 context._resolving_name = prev_resolving_name
             

@@ -486,9 +486,9 @@ class Buffer(Buffer):
     def cl_type(self):
         """A :class:`GlobalPtrType` descriptor for this Buffer."""
         if self.constant:
-            return self.cl_dtype.constant_ptr
+            return self.cl_dtype.ptr_constant
         else:
-            return self.cl_dtype.global_ptr
+            return self.cl_dtype.ptr_global
 
     cl_dtype = None
     """A :class:`Type` descriptor for the *elements* of the memory object."""

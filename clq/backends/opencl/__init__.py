@@ -17,29 +17,63 @@ class Type(base_c.Type):
 
 class ScalarType(base_c.ScalarType, Type):
     ptr = None
-    ptr_global = None
-    ptr_local = None
-    ptr_private = None
-    ptr_constant = None
     
-    pass
+    @cypy.lazy(property)
+    def ptr_global(self):
+        return GlobalPtrType(self)
+    
+    @cypy.lazy(property)
+    def ptr_shared(self):
+        return SharedPtrType(self)
+    
+    @cypy.lazy(property)
+    def ptr_private(self):
+        return PrivatePtrType(self)
+    
+    @cypy.lazy(property)
+    def ptr_constant(self):
+        return ConstantPtrType(self)
 
 class VoidType(base_c.VoidType, Type):
     ptr = None
-    ptr_private = None
     
-    pass
+    @cypy.lazy(property)
+    def ptr_global(self):
+        return GlobalPtrType(self)
+    
+    @cypy.lazy(property)
+    def ptr_shared(self):
+        return SharedPtrType(self)
+    
+    @cypy.lazy(property)
+    def ptr_private(self):
+        return PrivatePtrType(self)
+    
+    @cypy.lazy(property)
+    def ptr_constant(self):
+        return ConstantPtrType(self)
 
 void = VoidType()
 
 class BoolType(base_c.BoolType, Type):
     ptr = None
-    ptr_global = None
-    ptr_local = None
-    ptr_private = None
-    ptr_constant = None
     
-    pass
+    @cypy.lazy(property)
+    def ptr_global(self):
+        return GlobalPtrType(self)
+    
+    @cypy.lazy(property)
+    def ptr_shared(self):
+        return SharedPtrType(self)
+    
+    @cypy.lazy(property)
+    def ptr_private(self):
+        return PrivatePtrType(self)
+    
+    @cypy.lazy(property)
+    def ptr_constant(self):
+        return ConstantPtrType(self)
+
 bool = BoolType()
 
 #===============================================================================
@@ -140,7 +174,7 @@ int_types = cypy.merge_dicts(machine_independent_int_types,
 #===============================================================================
 # Floating-point numbers
 #===============================================================================
-class FloatType(ScalarType, base_c.FloatType):
+class FloatType(base_c.FloatType, ScalarType):
     pass
 
 half = FloatType("half")
@@ -187,8 +221,32 @@ vector_types = { }
 # Pointers
 #===============================================================================
 class PtrType(base_c.PtrType, Type):
+    def __init__(self, target_type, address_space):
+        self.target_type = target_type
+        self.address_space = address_space
+        Type.__init__(self, "%s %s*" % (address_space, target_type))
+        
+    target_type = None
+    address_space = None
+    
     ptr = None
     
+class GlobalPtrType(PtrType):
+    def __init__(self, target_type):
+        PtrType.__init__(self, target_type, "__global")
+        
+class ConstantPtrType(PtrType):
+    def __init__(self, target_type):
+        PtrType.__init__(self, target_type, "__constant")
+        
+class PrivatePtrType(PtrType):
+    def __init__(self, target_type):
+        PtrType.__init__(self, target_type, "__private")
+        
+class SharedPtrType(PtrType):
+    def __init__(self, target_type):
+        PtrType.__init__(self, target_type, "__shared")
+        
 loc = None
 
 #===============================================================================
@@ -370,6 +428,483 @@ APPLE_extensions = (cl_APPLE_gl_sharing,
                     cl_APPLE_SetMemObjectDestructor,
                     cl_APPLE_ContextLoggingFunctions)
 """Tuple containing all Apple extensions."""
+
+##############################################################################
+# Built-ins 
+##############################################################################
+class BuiltinFn(object):
+    """A stub for built-in functions avaiable to OpenCL kernels."""
+    def __init__(self, name, return_type_fn):
+        self.name = name
+        self.return_type_fn = return_type_fn
+        builtins[name] = self  
+        
+    name = None
+    """The name of the function."""
+    
+    return_type_fn = None
+    """A function which, when provided the types of the input arguments, gives
+    you the return type of the builtin function, or raises an :class:`Error`
+    if the types are invalid."""
+    
+    requires_extensions = None
+    """If not None, returns a tuple of extensions required for arguments of 
+    the specified types."""
+    
+    @cypy.lazy(property)
+    def cl_type(self):
+        return BuiltinFnType(self)
+
+class BuiltinFnType(Type):
+    """The type of OpenCL builtin function stubs (:class:`BuiltinFn`)."""
+    def __init__(self, builtin):
+        self.builtin = self.constant_value = builtin
+        
+    def __repr__(self):
+        return self.builtin.name
+    
+    def _resolve_Call(self, visitor, func, args):
+        builtin = self.builtin
+        arg_types = tuple(visitor._resolve_type(arg.unresolved_type) 
+                          for arg in args)
+        return builtin.return_type_fn(*arg_types)
+    
+    def _generate_Call(self, visitor, node):
+        visit = visitor.visit
+        func = visitor.visit(node.func)
+        # TODO: Implement generate call
+        
+cypy.intern(BuiltinFnType)
+
+class BuiltinConstant(object):
+    """A descriptor for builtin constants available to OpenCL kernels."""
+    def __init__(self, name, cl_type):
+        self.name = name
+        self.cl_type = cl_type
+        builtins[name] = self
+        
+class ReservedKeyword(object):
+    """A descriptor for OpenCL reserved keywords."""
+    def __init__(self, name):
+        self.name = name
+        builtins[name] = self
+
+builtins = { }
+"""A map from built-in and reserved names to their corresponding descriptor."""
+
+# Work-Item Built-in Functions [6.11.1]
+get_work_dim = BuiltinFn("get_work_dim", lambda D: uint)
+"""The ``get_work_dim`` builtin function."""
+get_global_size = BuiltinFn("get_global_size", lambda D: size_t)
+"""The ``get_global_size`` builtin function."""
+get_global_id = BuiltinFn("get_global_id", lambda D: size_t)
+"""The ``get_global_id`` builtin function."""
+get_local_size = BuiltinFn("get_local_size", lambda D: size_t)
+"""The ``get_local_size`` builtin function."""
+get_local_id = BuiltinFn("get_local_id", lambda D: size_t)
+"""The ``get_local_id`` builtin function."""
+get_num_groups = BuiltinFn("get_num_groups", lambda D: size_t)
+"""The ``get_num_groups`` builtin function."""
+get_group_id = BuiltinFn("get_group_id", lambda D: size_t)
+"""The ``get_group_id`` builtin function."""
+
+# Integer Built-in Functions [6.11.3]
+abs = BuiltinFn("abs", lambda x: x.unsigned_variant)
+"""The ``abs`` builtin function."""
+abs_diff = BuiltinFn("abs_diff", lambda x, y: x.unsigned_variant)
+"""The ``abs_diff`` builtin function."""
+add_sat = BuiltinFn("add_sat", lambda x, y: x)
+"""The ``add_sat`` builtin function."""
+hadd = BuiltinFn("hadd", lambda x, y: x)
+"""The ``hadd`` builtin function."""
+rhadd = BuiltinFn("rhadd", lambda x, y: x)
+"""The ``rhadd`` builtin function."""
+clz = BuiltinFn("clz", lambda x: x)
+"""The ``clz`` builtin function."""
+mad_hi = BuiltinFn("mad_hi", lambda a, b, c: a)
+"""The ``mad_hi`` builtin function."""
+mad24 = BuiltinFn("mad24", lambda a, b, c: a)
+"""The ``mad24`` builtin function."""
+mad_sat = BuiltinFn("mad_sat", lambda a, b, c: a)
+"""The ``mad_sat`` builtin function."""
+max = BuiltinFn("max", lambda x, y: x)
+"""The ``max`` builtin function."""
+min = BuiltinFn("min", lambda x, y: x)
+"""The ``min`` builtin function."""
+mul_hi = BuiltinFn("mul_hi", lambda x, y: x)
+"""The ``mul_hi`` builtin function."""
+mul24 = BuiltinFn("mul24", lambda a, b: a)
+"""The ``mul24`` builtin function."""
+rotate = BuiltinFn("rotate", lambda v, i: v)
+"""The ``rotate`` builtin function."""
+sub_sat = BuiltinFn("sub_sat", lambda x, y: x)
+"""The ``sub_sat`` builtin function."""
+
+def _upsample_return_type_fn(hi, lo):
+    # TODO: don't use is
+    if hi is char and lo is uchar:
+        return short
+    if hi is uchar and lo is uchar:
+        return ushort
+    if hi is short and lo is ushort:
+        return int
+    if hi is ushort and lo is short:
+        return uint
+    if hi is int and lo is int:
+        return long
+    if hi is uint and lo is uint:
+        return ulong
+    
+    raise TypeResolutionError(
+        "Invalid argument types for upsample built-in: %s and %s." % 
+        (hi.name, lo.name))
+upsample = BuiltinFn("upsample", _upsample_return_type_fn)
+"""The ``upsample`` builtin function."""
+
+# Common Built-in Functions [6.11.4]
+clamp = BuiltinFn("clamp", lambda x, min, max: x)
+"""The ``clamp`` builtin function."""
+degrees = BuiltinFn("degrees", lambda radians: radians)
+"""The ``degrees`` builtin function."""
+mix = BuiltinFn("mix", lambda x, y: x)
+"""The ``mix`` builtin function."""
+radians = BuiltinFn("radians", lambda degrees: degrees)
+"""The ``radians`` builtin function."""
+step = BuiltinFn("step", lambda edge, x: x)
+"""The ``step`` builtin function."""
+smoothstep = BuiltinFn("smoothstep", lambda edge0, edge1, x: x)
+"""The ``smoothstep`` builtin function."""
+sign = BuiltinFn("sign", lambda x: x)
+"""The ``sign`` builtin function."""
+
+# Math Built-in Functions [6.11.2]
+acos = BuiltinFn("acos", lambda x: x)
+"""The ``acos`` builtin function."""
+acosh = BuiltinFn("acosh", lambda x: x)
+"""The ``acosh`` builtin function."""
+acospi = BuiltinFn("acospi", lambda x: x)
+"""The ``acospi`` builtin function."""
+asin = BuiltinFn("asin", lambda x: x)
+"""The ``asin`` builtin function."""
+asinh = BuiltinFn("asinh", lambda x: x)
+"""The ``asinh`` builtin function."""
+asinpi = BuiltinFn("asinpi", lambda x: x)
+"""The ``asinpi`` builtin function."""
+atan = BuiltinFn("atan", lambda y_over_x: y_over_x)
+"""The ``atan`` builtin function."""
+atan2 = BuiltinFn("atan2", lambda y, x: y)
+"""The ``atan2`` builtin function."""
+atanh = BuiltinFn("atanh", lambda x: x)
+"""The ``atanh`` builtin function."""
+atanpi = BuiltinFn("atanpi", lambda x: x)
+"""The ``atanpi`` builtin function."""
+atan2pi = BuiltinFn("atan2pi", lambda x, y: x)
+"""The ``atan2pi`` builtin function."""
+cbrt = BuiltinFn("cbrt", lambda x: x)
+"""The ``cbrt`` builtin function."""
+ceil = BuiltinFn("ceil", lambda x: x)
+"""The ``ceil`` builtin function."""
+copysign = BuiltinFn("copysign", lambda x, y: x)
+"""The ``copysign`` builtin function."""
+cos = BuiltinFn("cos", lambda x: x)
+"""The ``cos`` builtin function."""
+half_cos = BuiltinFn("half_cos", lambda x: x)
+"""The ``half_cos`` builtin function."""
+native_cos = BuiltinFn("native_cos", lambda x: x)
+"""The ``native_cos`` builtin function."""
+cosh = BuiltinFn("cosh", lambda x: x)
+"""The ``cosh`` builtin function."""
+cospi = BuiltinFn("cospi", lambda x: x)
+"""The ``cospi`` builtin function."""
+half_divide = BuiltinFn("half_divide", lambda x, y: x)
+"""The ``half_divide`` builtin function."""
+native_divide = BuiltinFn("native_divide", lambda x, y: x)
+"""The ``native_divide`` builtin function."""
+erfc = BuiltinFn("erfc", lambda x, y: x)
+"""The ``erfc`` builtin function."""
+erf = BuiltinFn("erf", lambda x: x)
+"""The ``erf`` builtin function."""
+exp = BuiltinFn("exp", lambda x: x)
+"""The ``exp`` builtin function."""
+half_exp = BuiltinFn("half_exp", lambda x: x)
+"""The ``half_exp`` builtin function."""
+native_exp = BuiltinFn("native_exp", lambda x: x)
+"""The ``native_exp`` builtin function."""
+exp2 = BuiltinFn("exp2", lambda x: x)
+"""The ``exp2`` builtin function."""
+half_exp2 = BuiltinFn("half_exp2", lambda x: x)
+"""The ``half_exp2`` builtin function."""
+native_exp2 = BuiltinFn("native_exp2", lambda x: x)
+"""The ``native_exp2`` builtin function."""
+exp10 = BuiltinFn("exp10", lambda x: x)
+"""The ``exp10`` builtin function."""
+half_exp10 = BuiltinFn("half_exp10", lambda x: x)
+"""The ``half_exp10`` builtin function."""
+native_exp10 = BuiltinFn("native_exp10", lambda x: x)
+"""The ``native_exp10`` builtin function."""
+expm1 = BuiltinFn("expm1", lambda x: x)
+"""The ``expm1`` builtin function."""
+fabs = BuiltinFn("fabs", lambda x: x)
+"""The ``fabs`` builtin function."""
+fdim = BuiltinFn("fdim", lambda x, y: x)
+"""The ``fdim`` builtin function."""
+floor = BuiltinFn("floor", lambda x: x)
+"""The ``floor`` builtin function."""
+fma = BuiltinFn("fma", lambda a, b, c: a)
+"""The ``fma`` builtin function."""
+fmax = BuiltinFn("fmax", lambda x, y: x)
+"""The ``fmax`` builtin function."""
+fmin = BuiltinFn("fmin", lambda x, y: x)
+"""The ``fmin`` builtin function."""
+fmod = BuiltinFn("fmod", lambda x, y: x)
+"""The ``fmod`` builtin function."""
+fract = BuiltinFn("fract", lambda x, iptr: x)
+"""The ``fract`` builtin function."""
+frexp = BuiltinFn("frexp", lambda x, exp: x)
+"""The ``frexp`` builtin function."""
+hypot = BuiltinFn("hypot", lambda x, y: x)
+"""The ``hypot`` builtin function."""
+ilogb = BuiltinFn("ilogb", lambda x: x)
+"""The ``ilogb`` builtin function."""
+ldexp = BuiltinFn("ldexp", lambda x, n: x)
+"""The ``ldexp`` builtin function."""
+lgamma = BuiltinFn("lgamma", lambda x: x)
+"""The ``lgamma`` builtin function."""
+lgamma_r = BuiltinFn("lgamma_r", lambda x, signp: x)
+"""The ``lgamma_r`` builtin function."""
+log = BuiltinFn("log", lambda x: x)
+"""The ``log`` builtin function."""
+half_log = BuiltinFn("half_log", lambda x: x)
+"""The ``half_log`` builtin function."""
+native_log = BuiltinFn("native_log", lambda x: x)
+"""The ``native_log`` builtin function."""
+log2 = BuiltinFn("log2", lambda x: x)
+"""The ``log2`` builtin function."""
+half_log2 = BuiltinFn("half_log2", lambda x: x)
+"""The ``half_log2`` builtin function."""
+native_log2 = BuiltinFn("native_log2", lambda x: x)
+"""The ``native_log2`` builtin function."""
+log10 = BuiltinFn("log10", lambda x: x)
+"""The ``log10`` builtin function."""
+half_log10 = BuiltinFn("half_log10", lambda x: x)
+"""The ``half_log10`` builtin function."""
+native_log10 = BuiltinFn("native_log10", lambda x: x)
+"""The ``native_log10`` builtin function."""
+log1p = BuiltinFn("log1p", lambda x: x)
+"""The ``log1p`` builtin function."""
+logb = BuiltinFn("logb", lambda x: x)
+"""The ``logb`` builtin function."""
+mad = BuiltinFn("mad", lambda a, b, c: a)
+"""The ``mad`` builtin function."""
+modf = BuiltinFn("modf", lambda x, iptr: x)
+"""The ``modf`` builtin function."""
+nextafter = BuiltinFn("nextafter", lambda x, y: x)
+"""The ``nextafter`` builtin function."""
+pow = BuiltinFn("pow", lambda x, y: x)
+"""The ``pow`` builtin function."""
+pown = BuiltinFn("pown", lambda x, y: x)
+"""The ``pown`` builtin function."""
+powr = BuiltinFn("powr", lambda x, y: x)
+"""The ``powr`` builtin function."""
+half_powr = BuiltinFn("half_powr", lambda x, y: x)
+"""The ``half_powr`` builtin function."""
+native_powr = BuiltinFn("native_powr", lambda x, y: x)
+"""The ``native_powr`` builtin function."""
+half_recip = BuiltinFn("half_recip", lambda x: x)
+"""The ``half_recip`` builtin function."""
+native_recip = BuiltinFn("native_recip", lambda x: x)
+"""The ``native_recip`` builtin function."""
+remainder = BuiltinFn("remainder", lambda x, y: x)
+"""The ``remainder`` builtin function."""
+remquo = BuiltinFn("remquo", lambda x, y, n: x)
+"""The ``remquo`` builtin function."""
+rint = BuiltinFn("rint", lambda x: x)
+"""The ``rint`` builtin function."""
+rootn = BuiltinFn("rootn", lambda x, y: x)
+"""The ``rootn`` builtin function."""
+round = BuiltinFn("round", lambda x: x)
+"""The ``round`` builtin function."""
+rsqrt = BuiltinFn("rsqrt", lambda x: x)
+"""The ``rsqrt`` builtin function."""
+native_rsqrt = BuiltinFn("native_rsqrt", lambda x: x)
+"""The ``native_rsqrt`` builtin function."""
+half_rsqrt = BuiltinFn("half_rsqrt", lambda x: x)
+"""The ``half_rsqrt`` builtin function."""
+sin = BuiltinFn("sin", lambda x: x)
+"""The ``sin`` builtin function."""
+native_sin = BuiltinFn("native_sin", lambda x: x)
+"""The ``native_sin`` builtin function."""
+half_sin = BuiltinFn("half_sin", lambda x: x)
+"""The ``half_sin`` builtin function."""
+sincos = BuiltinFn("sincos", lambda x, cosval: x)
+"""The ``sincos`` builtin function."""
+sinh = BuiltinFn("sinh", lambda x: x)
+"""The ``sinh`` builtin function."""
+sinpi = BuiltinFn("sinpi", lambda x: x)
+"""The ``sinpi`` builtin function."""
+sqrt = BuiltinFn("sqrt", lambda x: x)
+"""The ``sqrt`` builtin function."""
+half_sqrt = BuiltinFn("half_sqrt", lambda x: x)
+"""The ``half_sqrt`` builtin function."""
+native_sqrt = BuiltinFn("native_sqrt", lambda x: x)
+"""The ``native_sqrt`` builtin function."""
+tan = BuiltinFn("tan", lambda x: x)
+"""The ``tan`` builtin function."""
+half_tan = BuiltinFn("half_tan", lambda x: x)
+"""The ``half_tan`` builtin function."""
+native_tan = BuiltinFn("native_tan", lambda x: x)
+"""The ``native_tan`` builtin function."""
+tanh = BuiltinFn("tanh", lambda x: x)
+"""The ``tanh`` builtin function."""
+tanpi = BuiltinFn("tanpi", lambda x: x)
+"""The ``tanpi`` builtin function."""
+tgamma = BuiltinFn("tgamma", lambda x: x)
+"""The ``tgamma`` builtin function."""
+trunc = BuiltinFn("trunc", lambda x: x)
+"""The ``trunc`` builtin function."""
+
+# Geometric Built-in Functions [6.11.5]
+dot = BuiltinFn("dot", lambda p0, p1: p0)
+"""The ``dot`` builtin function."""
+distance = BuiltinFn("distance", lambda p0, p1: p0)
+"""The ``distance`` builtin function."""
+length = BuiltinFn("length", lambda p: p)
+"""The ``length`` builtin function."""
+normalize = BuiltinFn("normalize", lambda p: p)
+"""The ``normalize`` builtin function."""
+fast_distance = BuiltinFn("fast_distance", lambda p0, p1: float)
+"""The ``fast_distance`` builtin function."""
+fast_length = BuiltinFn("fast_length", lambda p: float)
+"""The ``fast_length`` builtin function."""
+fast_normalize = BuiltinFn("fast_normalize", lambda p: float)
+"""The ``fast_normalize`` builtin function."""
+
+# Relational Built-in Functions [6.11.6]
+isequal = BuiltinFn("isequal", lambda x, y: int)
+"""The ``isequal`` builtin function."""
+isnotequal = BuiltinFn("isnotequal", lambda x, y: int)
+"""The ``isnotequal`` builtin function."""
+isgreater = BuiltinFn("isgreater", lambda x, y: int)
+"""The ``isgreater`` builtin function."""
+isgreaterequal = BuiltinFn("isgreaterequal", lambda x, y: int)
+"""The ``isgreaterequal`` builtin function."""
+isless = BuiltinFn("isless", lambda x, y: int)
+"""The ``isless`` builtin function."""
+islessequal = BuiltinFn("islessequal", lambda x, y: int)
+"""The ``islessequal`` builtin function."""
+islessgreater = BuiltinFn("islessgreater", lambda x, y: int)
+"""The ``islessgreater`` builtin function."""
+isfinite = BuiltinFn("isfinite", lambda x: int)
+"""The ``isfinite`` builtin function."""
+isinf = BuiltinFn("isinf", lambda x: int)
+"""The ``isinf`` builtin function."""
+isnan = BuiltinFn("isnan", lambda x: int)
+"""The ``isnan`` builtin function."""
+isnormal = BuiltinFn("isnormal", lambda x: int)
+"""The ``isnormal`` builtin function."""
+isordered = BuiltinFn("isordered", lambda x, y: int)
+"""The ``isordered`` builtin function."""
+isunordered = BuiltinFn("isunordered", lambda x, y: int)
+"""The ``isunordered`` builtin function."""
+signbit = BuiltinFn("signbit", lambda x: int)
+"""The ``signbit`` builtin function."""
+any = BuiltinFn("any", lambda x: int)
+"""The ``any`` builtin function."""
+all = BuiltinFn("all", lambda x: int)
+"""The ``all`` builtin function."""
+bitselect = BuiltinFn("bitselect", lambda a, b, c: a)
+"""The ``bitselect`` builtin function."""
+select = BuiltinFn("select", lambda a, b, c: a)
+"""The ``select`` builtin function."""
+
+# Base Atomic Functions [9.5]
+atom_add = BuiltinFn("atom_add", lambda p, val: val)
+"""The ``atom_add`` builtin function."""
+atom_sub = BuiltinFn("atom_sub", lambda p, val: val)
+"""The ``atom_sub`` builtin function."""
+atom_xchg = BuiltinFn("atom_xchg", lambda p, val: val)
+"""The ``atom_xchg`` builtin function."""
+atom_inc = BuiltinFn("atom_inc", lambda p: p.target_type)
+"""The ``atom_inc`` builtin function."""
+atom_dec = BuiltinFn("atom_dec", lambda p: p.target_type)
+"""The ``atom_dec`` builtin function."""
+atom_cmpxchg = BuiltinFn("atom_cmpxchg", lambda p, cmp, val: val)
+"""The ``atom_cmpxchg`` builtin function."""
+base_atomics = (atom_add, atom_sub, atom_xchg, atom_inc, atom_dec, atom_cmpxchg)
+
+def _base_atomic_extension_inference(p, *args): #@UnusedVariable
+    target_type = p.target_type
+    if target_type is int or target_type is uint:
+        if p.address_space == "__global":
+            return (cl_khr_global_int32_base_atomics,)
+        return (cl_khr_local_int32_base_atomics,)
+    return (cl_khr_int64_base_atomics,)
+    
+for fn in base_atomics:
+    fn.requires_extensions = _base_atomic_extension_inference
+    
+# Extended Atomic Functions [9.5]
+atom_min = BuiltinFn("atom_min", lambda p, val: val)
+"""The ``atom_min`` builtin function."""
+atom_max = BuiltinFn("atom_max", lambda p, val: val)
+"""The ``atom_max`` builtin function."""
+atom_and = BuiltinFn("atom_and", lambda p, val: val)
+"""The ``atom_and`` builtin function."""
+atom_or = BuiltinFn("atom_or", lambda p, val: val)
+"""The ``atom_or`` builtin function."""
+atom_xor = BuiltinFn("atom_xor", lambda p, val: val)
+"""The ``atom_xor`` builtin function."""
+extended_atomics = (atom_min, atom_max, atom_and, atom_or, atom_xor)
+
+def _extended_atomic_extension_inference(p):
+    target_type = p.target_type
+    if target_type is int or target_type is uint:
+        if p.address_space == "__global":
+            return (cl_khr_global_int32_extended_atomics,)
+        return (cl_khr_local_int32_extended_atomics,)
+    return (cl_khr_int64_extended_atomics,)
+
+for fn in extended_atomics:
+    fn.requires_extensions = _extended_atomic_extension_inference
+
+# Vector Data Load/Store Built-in Functions [6.11.7]
+vload_half = BuiltinFn("vload_half", lambda offset, p: float)
+"""The ``vload_half`` builtin function."""
+vstore_half = BuiltinFn("vstore_half", lambda data, offset, p: void)
+"""The ``vstore_half`` builtin function."""
+
+sizeof = BuiltinFn("sizeof", lambda x: size_t)
+"""The ``sizeof`` builtin operator."""
+
+# Built-in constants
+true = BuiltinConstant("true", int)
+false = BuiltinConstant("false", int)
+NULL = BuiltinConstant("NULL", intptr_t)
+
+# Reserved keywords
+reserved_keywords = ["auto", "break", "case", "char", "const", "continue", 
+                     "default", "do", "double", "else", "enum", "extern", 
+                     "float", "for", "goto", "if", "inline", "int", "long", 
+                     "register", "restrict", "return", "short", "signed", 
+                     "sizeof", "static", "struct", "switch", "typedef",
+                     "union", "unsigned", "void", "volatile", "while", "_Bool",
+                     "_Complex", "_Imaginary", "char", "uchar", "short", 
+                     "ushort", "int", "uint", "long", "ulong", "float",
+                     "half", "double", "bool", "quad", "complex", "imaginary",
+                     "image2d_t", "image3d_t", "sampler_t", "event_t",
+                     "__global", "global", "__local", "local", "__private",
+                     "private", "__constant", "constant", "__kernel", "kernel",
+                     "__read_only", "read_only", "__write_only", "write_only",
+                     "__read_write", "read_write", "__attribute__"]
+scalar_types = ("char", "uchar", "short", "ushort", "int", "uint", "long",
+                "ulong", "float", "half", "double", "bool", "quad")
+vector_type_sizes = (2, 3, 4, 8, 16)
+for type in scalar_types:
+    for size in vector_type_sizes:
+        reserved_keywords.append(type + str(size))
+reserved_keywords = tuple(reserved_keywords)
+reserved_keyword_descriptors = tuple(ReservedKeyword(kw) 
+                                     for kw in reserved_keywords)
 
 #############################################################################
 ## Versions
@@ -1228,479 +1763,7 @@ APPLE_extensions = (cl_APPLE_gl_sharing,
 #                return cl_char.private_ptr
 #            raise Error("Cannot infer cl_type of " + str(value))
 #
-###############################################################################
-## Built-ins 
-###############################################################################
-#class BuiltinFn(object):
-#    """A stub for built-in functions avaiable to OpenCL kernels."""
-#    def __init__(self, name, return_type_fn):
-#        self.name = name
-#        self.return_type_fn = return_type_fn
-#        builtins[name] = self  
-#        
-#    name = None
-#    """The name of the function."""
-#    
-#    return_type_fn = None
-#    """A function which, when provided the types of the input arguments, gives
-#    you the return type of the builtin function, or raises an :class:`Error`
-#    if the types are invalid."""
-#    
-#    requires_extensions = None
-#    """If not None, returns a tuple of extensions required for arguments of 
-#    the specified types."""
-#    
-#    @cypy.lazy(property)
-#    def clq_type(self):
-#        return BuiltinFnType(self)
-#
-#class BuiltinFnType(Type):
-#    """The type of OpenCL builtin function stubs (:class:`BuiltinFn`)."""
-#    def __init__(self, builtin):
-#        self.builtin = self.constant_value = builtin
-#        
-#    def __repr__(self):
-#        return self.builtin.name
-#    
-#    def _resolve_Call(self, visitor, func, args):
-#        builtin = self.builtin
-#        arg_types = tuple(visitor._resolve_type(arg.unresolved_type) 
-#                          for arg in args)
-#        return builtin.return_type_fn(*arg_types)
-#    
-#    def _generate_Call(self, visitor, node):
-#        visit = visitor.visit
-#        func = visitor.visit(node.func)
-#        # TODO
-#cypy.interned(BuiltinFnType)
-#
-#class BuiltinConstant(object):
-#    """A descriptor for builtin constants available to OpenCL kernels."""
-#    def __init__(self, name, cl_type):
-#        self.name = name
-#        self.cl_type = cl_type
-#        builtins[name] = self
-#        
-#class ReservedKeyword(object):
-#    """A descriptor for OpenCL reserved keywords."""
-#    def __init__(self, name):
-#        self.name = name
-#        builtins[name] = self
-#
-#builtins = { }
-#"""A map from built-in and reserved names to their corresponding descriptor."""
-#
-## Work-Item Built-in Functions [6.11.1]
-#get_work_dim = BuiltinFn("get_work_dim", lambda D: cl_uint)
-#"""The ``get_work_dim`` builtin function."""
-#get_global_size = BuiltinFn("get_global_size", lambda D: cl_size_t)
-#"""The ``get_global_size`` builtin function."""
-#get_global_id = BuiltinFn("get_global_id", lambda D: cl_size_t)
-#"""The ``get_global_id`` builtin function."""
-#get_local_size = BuiltinFn("get_local_size", lambda D: cl_size_t)
-#"""The ``get_local_size`` builtin function."""
-#get_local_id = BuiltinFn("get_local_id", lambda D: cl_size_t)
-#"""The ``get_local_id`` builtin function."""
-#get_num_groups = BuiltinFn("get_num_groups", lambda D: cl_size_t)
-#"""The ``get_num_groups`` builtin function."""
-#get_group_id = BuiltinFn("get_group_id", lambda D: cl_size_t)
-#"""The ``get_group_id`` builtin function."""
-#
-## Integer Built-in Functions [6.11.3]
-#abs = BuiltinFn("abs", lambda x: x.unsigned_variant)
-#"""The ``abs`` builtin function."""
-#abs_diff = BuiltinFn("abs_diff", lambda x, y: x.unsigned_variant)
-#"""The ``abs_diff`` builtin function."""
-#add_sat = BuiltinFn("add_sat", lambda x, y: x)
-#"""The ``add_sat`` builtin function."""
-#hadd = BuiltinFn("hadd", lambda x, y: x)
-#"""The ``hadd`` builtin function."""
-#rhadd = BuiltinFn("rhadd", lambda x, y: x)
-#"""The ``rhadd`` builtin function."""
-#clz = BuiltinFn("clz", lambda x: x)
-#"""The ``clz`` builtin function."""
-#mad_hi = BuiltinFn("mad_hi", lambda a, b, c: a)
-#"""The ``mad_hi`` builtin function."""
-#mad24 = BuiltinFn("mad24", lambda a, b, c: a)
-#"""The ``mad24`` builtin function."""
-#mad_sat = BuiltinFn("mad_sat", lambda a, b, c: a)
-#"""The ``mad_sat`` builtin function."""
-#max = BuiltinFn("max", lambda x, y: x)
-#"""The ``max`` builtin function."""
-#min = BuiltinFn("min", lambda x, y: x)
-#"""The ``min`` builtin function."""
-#mul_hi = BuiltinFn("mul_hi", lambda x, y: x)
-#"""The ``mul_hi`` builtin function."""
-#mul24 = BuiltinFn("mul24", lambda a, b: a)
-#"""The ``mul24`` builtin function."""
-#rotate = BuiltinFn("rotate", lambda v, i: v)
-#"""The ``rotate`` builtin function."""
-#sub_sat = BuiltinFn("sub_sat", lambda x, y: x)
-#"""The ``sub_sat`` builtin function."""
-#
-#def _upsample_return_type_fn(hi, lo):
-#    # TODO: don't use is
-#    if hi is cl_char and lo is cl_uchar:
-#        return cl_short
-#    if hi is cl_uchar and lo is cl_uchar:
-#        return cl_ushort
-#    if hi is cl_short and lo is cl_ushort:
-#        return cl_int
-#    if hi is cl_ushort and lo is cl_short:
-#        return cl_uint
-#    if hi is cl_int and lo is cl_int:
-#        return cl_long
-#    if hi is cl_uint and lo is cl_uint:
-#        return cl_ulong
-#    
-#    raise Error()
-#upsample = BuiltinFn("upsample", _upsample_return_type_fn)
-#"""The ``upsample`` builtin function."""
-#
-## Common Built-in Functions [6.11.4]
-#clamp = BuiltinFn("clamp", lambda x, min, max: x)
-#"""The ``clamp`` builtin function."""
-#degrees = BuiltinFn("degrees", lambda radians: radians)
-#"""The ``degrees`` builtin function."""
-#mix = BuiltinFn("mix", lambda x, y: x)
-#"""The ``mix`` builtin function."""
-#radians = BuiltinFn("radians", lambda degrees: degrees)
-#"""The ``radians`` builtin function."""
-#step = BuiltinFn("step", lambda edge, x: x)
-#"""The ``step`` builtin function."""
-#smoothstep = BuiltinFn("smoothstep", lambda edge0, edge1, x: x)
-#"""The ``smoothstep`` builtin function."""
-#sign = BuiltinFn("sign", lambda x: x)
-#"""The ``sign`` builtin function."""
-#
-## Math Built-in Functions [6.11.2]
-#acos = BuiltinFn("acos", lambda x: x)
-#"""The ``acos`` builtin function."""
-#acosh = BuiltinFn("acosh", lambda x: x)
-#"""The ``acosh`` builtin function."""
-#acospi = BuiltinFn("acospi", lambda x: x)
-#"""The ``acospi`` builtin function."""
-#asin = BuiltinFn("asin", lambda x: x)
-#"""The ``asin`` builtin function."""
-#asinh = BuiltinFn("asinh", lambda x: x)
-#"""The ``asinh`` builtin function."""
-#asinpi = BuiltinFn("asinpi", lambda x: x)
-#"""The ``asinpi`` builtin function."""
-#atan = BuiltinFn("atan", lambda y_over_x: y_over_x)
-#"""The ``atan`` builtin function."""
-#atan2 = BuiltinFn("atan2", lambda y, x: y)
-#"""The ``atan2`` builtin function."""
-#atanh = BuiltinFn("atanh", lambda x: x)
-#"""The ``atanh`` builtin function."""
-#atanpi = BuiltinFn("atanpi", lambda x: x)
-#"""The ``atanpi`` builtin function."""
-#atan2pi = BuiltinFn("atan2pi", lambda x, y: x)
-#"""The ``atan2pi`` builtin function."""
-#cbrt = BuiltinFn("cbrt", lambda x: x)
-#"""The ``cbrt`` builtin function."""
-#ceil = BuiltinFn("ceil", lambda x: x)
-#"""The ``ceil`` builtin function."""
-#copysign = BuiltinFn("copysign", lambda x, y: x)
-#"""The ``copysign`` builtin function."""
-#cos = BuiltinFn("cos", lambda x: x)
-#"""The ``cos`` builtin function."""
-#half_cos = BuiltinFn("half_cos", lambda x: x)
-#"""The ``half_cos`` builtin function."""
-#native_cos = BuiltinFn("native_cos", lambda x: x)
-#"""The ``native_cos`` builtin function."""
-#cosh = BuiltinFn("cosh", lambda x: x)
-#"""The ``cosh`` builtin function."""
-#cospi = BuiltinFn("cospi", lambda x: x)
-#"""The ``cospi`` builtin function."""
-#half_divide = BuiltinFn("half_divide", lambda x, y: x)
-#"""The ``half_divide`` builtin function."""
-#native_divide = BuiltinFn("native_divide", lambda x, y: x)
-#"""The ``native_divide`` builtin function."""
-#erfc = BuiltinFn("erfc", lambda x, y: x)
-#"""The ``erfc`` builtin function."""
-#erf = BuiltinFn("erf", lambda x: x)
-#"""The ``erf`` builtin function."""
-#exp = BuiltinFn("exp", lambda x: x)
-#"""The ``exp`` builtin function."""
-#half_exp = BuiltinFn("half_exp", lambda x: x)
-#"""The ``half_exp`` builtin function."""
-#native_exp = BuiltinFn("native_exp", lambda x: x)
-#"""The ``native_exp`` builtin function."""
-#exp2 = BuiltinFn("exp2", lambda x: x)
-#"""The ``exp2`` builtin function."""
-#half_exp2 = BuiltinFn("half_exp2", lambda x: x)
-#"""The ``half_exp2`` builtin function."""
-#native_exp2 = BuiltinFn("native_exp2", lambda x: x)
-#"""The ``native_exp2`` builtin function."""
-#exp10 = BuiltinFn("exp10", lambda x: x)
-#"""The ``exp10`` builtin function."""
-#half_exp10 = BuiltinFn("half_exp10", lambda x: x)
-#"""The ``half_exp10`` builtin function."""
-#native_exp10 = BuiltinFn("native_exp10", lambda x: x)
-#"""The ``native_exp10`` builtin function."""
-#expm1 = BuiltinFn("expm1", lambda x: x)
-#"""The ``expm1`` builtin function."""
-#fabs = BuiltinFn("fabs", lambda x: x)
-#"""The ``fabs`` builtin function."""
-#fdim = BuiltinFn("fdim", lambda x, y: x)
-#"""The ``fdim`` builtin function."""
-#floor = BuiltinFn("floor", lambda x: x)
-#"""The ``floor`` builtin function."""
-#fma = BuiltinFn("fma", lambda a, b, c: a)
-#"""The ``fma`` builtin function."""
-#fmax = BuiltinFn("fmax", lambda x, y: x)
-#"""The ``fmax`` builtin function."""
-#fmin = BuiltinFn("fmin", lambda x, y: x)
-#"""The ``fmin`` builtin function."""
-#fmod = BuiltinFn("fmod", lambda x, y: x)
-#"""The ``fmod`` builtin function."""
-#fract = BuiltinFn("fract", lambda x, iptr: x)
-#"""The ``fract`` builtin function."""
-#frexp = BuiltinFn("frexp", lambda x, exp: x)
-#"""The ``frexp`` builtin function."""
-#hypot = BuiltinFn("hypot", lambda x, y: x)
-#"""The ``hypot`` builtin function."""
-#ilogb = BuiltinFn("ilogb", lambda x: x)
-#"""The ``ilogb`` builtin function."""
-#ldexp = BuiltinFn("ldexp", lambda x, n: x)
-#"""The ``ldexp`` builtin function."""
-#lgamma = BuiltinFn("lgamma", lambda x: x)
-#"""The ``lgamma`` builtin function."""
-#lgamma_r = BuiltinFn("lgamma_r", lambda x, signp: x)
-#"""The ``lgamma_r`` builtin function."""
-#log = BuiltinFn("log", lambda x: x)
-#"""The ``log`` builtin function."""
-#half_log = BuiltinFn("half_log", lambda x: x)
-#"""The ``half_log`` builtin function."""
-#native_log = BuiltinFn("native_log", lambda x: x)
-#"""The ``native_log`` builtin function."""
-#log2 = BuiltinFn("log2", lambda x: x)
-#"""The ``log2`` builtin function."""
-#half_log2 = BuiltinFn("half_log2", lambda x: x)
-#"""The ``half_log2`` builtin function."""
-#native_log2 = BuiltinFn("native_log2", lambda x: x)
-#"""The ``native_log2`` builtin function."""
-#log10 = BuiltinFn("log10", lambda x: x)
-#"""The ``log10`` builtin function."""
-#half_log10 = BuiltinFn("half_log10", lambda x: x)
-#"""The ``half_log10`` builtin function."""
-#native_log10 = BuiltinFn("native_log10", lambda x: x)
-#"""The ``native_log10`` builtin function."""
-#log1p = BuiltinFn("log1p", lambda x: x)
-#"""The ``log1p`` builtin function."""
-#logb = BuiltinFn("logb", lambda x: x)
-#"""The ``logb`` builtin function."""
-#mad = BuiltinFn("mad", lambda a, b, c: a)
-#"""The ``mad`` builtin function."""
-#modf = BuiltinFn("modf", lambda x, iptr: x)
-#"""The ``modf`` builtin function."""
-#nextafter = BuiltinFn("nextafter", lambda x, y: x)
-#"""The ``nextafter`` builtin function."""
-#pow = BuiltinFn("pow", lambda x, y: x)
-#"""The ``pow`` builtin function."""
-#pown = BuiltinFn("pown", lambda x, y: x)
-#"""The ``pown`` builtin function."""
-#powr = BuiltinFn("powr", lambda x, y: x)
-#"""The ``powr`` builtin function."""
-#half_powr = BuiltinFn("half_powr", lambda x, y: x)
-#"""The ``half_powr`` builtin function."""
-#native_powr = BuiltinFn("native_powr", lambda x, y: x)
-#"""The ``native_powr`` builtin function."""
-#half_recip = BuiltinFn("half_recip", lambda x: x)
-#"""The ``half_recip`` builtin function."""
-#native_recip = BuiltinFn("native_recip", lambda x: x)
-#"""The ``native_recip`` builtin function."""
-#remainder = BuiltinFn("remainder", lambda x, y: x)
-#"""The ``remainder`` builtin function."""
-#remquo = BuiltinFn("remquo", lambda x, y, n: x)
-#"""The ``remquo`` builtin function."""
-#rint = BuiltinFn("rint", lambda x: x)
-#"""The ``rint`` builtin function."""
-#rootn = BuiltinFn("rootn", lambda x, y: x)
-#"""The ``rootn`` builtin function."""
-#round = BuiltinFn("round", lambda x: x)
-#"""The ``round`` builtin function."""
-#rsqrt = BuiltinFn("rsqrt", lambda x: x)
-#"""The ``rsqrt`` builtin function."""
-#native_rsqrt = BuiltinFn("native_rsqrt", lambda x: x)
-#"""The ``native_rsqrt`` builtin function."""
-#half_rsqrt = BuiltinFn("half_rsqrt", lambda x: x)
-#"""The ``half_rsqrt`` builtin function."""
-#sin = BuiltinFn("sin", lambda x: x)
-#"""The ``sin`` builtin function."""
-#native_sin = BuiltinFn("native_sin", lambda x: x)
-#"""The ``native_sin`` builtin function."""
-#half_sin = BuiltinFn("half_sin", lambda x: x)
-#"""The ``half_sin`` builtin function."""
-#sincos = BuiltinFn("sincos", lambda x, cosval: x)
-#"""The ``sincos`` builtin function."""
-#sinh = BuiltinFn("sinh", lambda x: x)
-#"""The ``sinh`` builtin function."""
-#sinpi = BuiltinFn("sinpi", lambda x: x)
-#"""The ``sinpi`` builtin function."""
-#sqrt = BuiltinFn("sqrt", lambda x: x)
-#"""The ``sqrt`` builtin function."""
-#half_sqrt = BuiltinFn("half_sqrt", lambda x: x)
-#"""The ``half_sqrt`` builtin function."""
-#native_sqrt = BuiltinFn("native_sqrt", lambda x: x)
-#"""The ``native_sqrt`` builtin function."""
-#tan = BuiltinFn("tan", lambda x: x)
-#"""The ``tan`` builtin function."""
-#half_tan = BuiltinFn("half_tan", lambda x: x)
-#"""The ``half_tan`` builtin function."""
-#native_tan = BuiltinFn("native_tan", lambda x: x)
-#"""The ``native_tan`` builtin function."""
-#tanh = BuiltinFn("tanh", lambda x: x)
-#"""The ``tanh`` builtin function."""
-#tanpi = BuiltinFn("tanpi", lambda x: x)
-#"""The ``tanpi`` builtin function."""
-#tgamma = BuiltinFn("tgamma", lambda x: x)
-#"""The ``tgamma`` builtin function."""
-#trunc = BuiltinFn("trunc", lambda x: x)
-#"""The ``trunc`` builtin function."""
-#
-## Geometric Built-in Functions [6.11.5]
-#dot = BuiltinFn("dot", lambda p0, p1: p0)
-#"""The ``dot`` builtin function."""
-#distance = BuiltinFn("distance", lambda p0, p1: p0)
-#"""The ``distance`` builtin function."""
-#length = BuiltinFn("length", lambda p: p)
-#"""The ``length`` builtin function."""
-#normalize = BuiltinFn("normalize", lambda p: p)
-#"""The ``normalize`` builtin function."""
-#fast_distance = BuiltinFn("fast_distance", lambda p0, p1: cl_float)
-#"""The ``fast_distance`` builtin function."""
-#fast_length = BuiltinFn("fast_length", lambda p: cl_float)
-#"""The ``fast_length`` builtin function."""
-#fast_normalize = BuiltinFn("fast_normalize", lambda p: cl_float)
-#"""The ``fast_normalize`` builtin function."""
-#
-## Relational Built-in Functions [6.11.6]
-#isequal = BuiltinFn("isequal", lambda x, y: cl_int)
-#"""The ``isequal`` builtin function."""
-#isnotequal = BuiltinFn("isnotequal", lambda x, y: cl_int)
-#"""The ``isnotequal`` builtin function."""
-#isgreater = BuiltinFn("isgreater", lambda x, y: cl_int)
-#"""The ``isgreater`` builtin function."""
-#isgreaterequal = BuiltinFn("isgreaterequal", lambda x, y: cl_int)
-#"""The ``isgreaterequal`` builtin function."""
-#isless = BuiltinFn("isless", lambda x, y: cl_int)
-#"""The ``isless`` builtin function."""
-#islessequal = BuiltinFn("islessequal", lambda x, y: cl_int)
-#"""The ``islessequal`` builtin function."""
-#islessgreater = BuiltinFn("islessgreater", lambda x, y: cl_int)
-#"""The ``islessgreater`` builtin function."""
-#isfinite = BuiltinFn("isfinite", lambda x: cl_int)
-#"""The ``isfinite`` builtin function."""
-#isinf = BuiltinFn("isinf", lambda x: cl_int)
-#"""The ``isinf`` builtin function."""
-#isnan = BuiltinFn("isnan", lambda x: cl_int)
-#"""The ``isnan`` builtin function."""
-#isnormal = BuiltinFn("isnormal", lambda x: cl_int)
-#"""The ``isnormal`` builtin function."""
-#isordered = BuiltinFn("isordered", lambda x, y: cl_int)
-#"""The ``isordered`` builtin function."""
-#isunordered = BuiltinFn("isunordered", lambda x, y: cl_int)
-#"""The ``isunordered`` builtin function."""
-#signbit = BuiltinFn("signbit", lambda x: cl_int)
-#"""The ``signbit`` builtin function."""
-#any = BuiltinFn("any", lambda x: cl_int)
-#"""The ``any`` builtin function."""
-#all = BuiltinFn("all", lambda x: cl_int)
-#"""The ``all`` builtin function."""
-#bitselect = BuiltinFn("bitselect", lambda a, b, c: a)
-#"""The ``bitselect`` builtin function."""
-#select = BuiltinFn("select", lambda a, b, c: a)
-#"""The ``select`` builtin function."""
-#
-## Base Atomic Functions [9.5]
-#atom_add = BuiltinFn("atom_add", lambda p, val: val)
-#"""The ``atom_add`` builtin function."""
-#atom_sub = BuiltinFn("atom_sub", lambda p, val: val)
-#"""The ``atom_sub`` builtin function."""
-#atom_xchg = BuiltinFn("atom_xchg", lambda p, val: val)
-#"""The ``atom_xchg`` builtin function."""
-#atom_inc = BuiltinFn("atom_inc", lambda p: p.target_type)
-#"""The ``atom_inc`` builtin function."""
-#atom_dec = BuiltinFn("atom_dec", lambda p: p.target_type)
-#"""The ``atom_dec`` builtin function."""
-#atom_cmpxchg = BuiltinFn("atom_cmpxchg", lambda p, cmp, val: val)
-#"""The ``atom_cmpxchg`` builtin function."""
-#base_atomics = (atom_add, atom_sub, atom_xchg, atom_inc, atom_dec, atom_cmpxchg)
-#
-#def _base_atomic_extension_inference(p, *args): #@UnusedVariable
-#    target_type = p.target_type
-#    if target_type is cl_int or target_type is cl_uint:
-#        if p.address_space == "__global":
-#            return (cl_khr_global_int32_base_atomics,)
-#        return (cl_khr_local_int32_base_atomics,)
-#    return (cl_khr_int64_base_atomics,)
-#    
-#for fn in base_atomics:
-#    fn.requires_extensions = _base_atomic_extension_inference
-#    
-## Extended Atomic Functions [9.5]
-#atom_min = BuiltinFn("atom_min", lambda p, val: val)
-#"""The ``atom_min`` builtin function."""
-#atom_max = BuiltinFn("atom_max", lambda p, val: val)
-#"""The ``atom_max`` builtin function."""
-#atom_and = BuiltinFn("atom_and", lambda p, val: val)
-#"""The ``atom_and`` builtin function."""
-#atom_or = BuiltinFn("atom_or", lambda p, val: val)
-#"""The ``atom_or`` builtin function."""
-#atom_xor = BuiltinFn("atom_xor", lambda p, val: val)
-#"""The ``atom_xor`` builtin function."""
-#extended_atomics = (atom_min, atom_max, atom_and, atom_or, atom_xor)
-#
-#def _extended_atomic_extension_inference(p):
-#    target_type = p.target_type
-#    if target_type is cl_int or target_type is cl_uint:
-#        if p.address_space == "__global":
-#            return (cl_khr_global_int32_extended_atomics,)
-#        return (cl_khr_local_int32_extended_atomics,)
-#    return (cl_khr_int64_extended_atomics,)
-#
-#for fn in extended_atomics:
-#    fn.requires_extensions = _extended_atomic_extension_inference
-#
-## Vector Data Load/Store Built-in Functions [6.11.7]
-#vload_half = BuiltinFn("vload_half", lambda offset, p: cl_float)
-#"""The ``vload_half`` builtin function."""
-#vstore_half = BuiltinFn("vstore_half", lambda data, offset, p: cl_void)
-#"""The ``vstore_half`` builtin function."""
-#
-#sizeof = BuiltinFn("sizeof", lambda x: cl_size_t)
-#"""The ``sizeof`` builtin operator."""
-#
-## Built-in constants
-#true = BuiltinConstant("true", cl_int)
-#false = BuiltinConstant("false", cl_int)
-#NULL = BuiltinConstant("NULL", cl_intptr_t)
-#
-## Reserved keywords
-#reserved_keywords = ["auto", "break", "case", "char", "const", "continue", 
-#                     "default", "do", "double", "else", "enum", "extern", 
-#                     "float", "for", "goto", "if", "inline", "int", "long", 
-#                     "register", "restrict", "return", "short", "signed", 
-#                     "sizeof", "static", "struct", "switch", "typedef",
-#                     "union", "unsigned", "void", "volatile", "while", "_Bool",
-#                     "_Complex", "_Imaginary", "char", "uchar", "short", 
-#                     "ushort", "int", "uint", "long", "ulong", "float",
-#                     "half", "double", "bool", "quad", "complex", "imaginary",
-#                     "image2d_t", "image3d_t", "sampler_t", "event_t",
-#                     "__global", "global", "__local", "local", "__private",
-#                     "private", "__constant", "constant", "__kernel", "kernel",
-#                     "__read_only", "read_only", "__write_only", "write_only",
-#                     "__read_write", "read_write", "__attribute__"]
-#scalar_types = ("char", "uchar", "short", "ushort", "int", "uint", "long",
-#                "ulong", "float", "half", "double", "bool", "quad")
-#vector_type_sizes = (2, 3, 4, 8, 16)
-#for type in scalar_types:
-#    for size in vector_type_sizes:
-#        reserved_keywords.append(type + str(size))
-#reserved_keywords = tuple(reserved_keywords)
-#reserved_keyword_descriptors = tuple(ReservedKeyword(kw) 
-#                                     for kw in reserved_keywords)
+
 #
 ##################################################################################
 ### Vector type code generation
