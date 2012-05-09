@@ -194,7 +194,7 @@ class Backend(clq.Backend):
         
     def generate_Exec(self, context, node):
         body = node.body
-        context.smts.append(body.s)
+        context.stmts.append(body.s)
         context.body.append(astx.copy_node(node,
             body=astx.copy_node(body),
             globals=[],
@@ -410,25 +410,25 @@ class IntegerType(ScalarType):
     """If integer, this provides the unsigned variant of the type."""
     
     def resolve_UnaryOp(self, context, node):
-        min_sizeof = self.min_sizeof
-        if min_sizeof < 4:
-            # chars and shorts are widened according to C99
-            if self.unsigned:
-                if isinstance(node.op, _ast.USub):
-                    return context.backend.int_type(context, node)
-                return context.backend.uint_type(context, node)
-            return context.backend.int_type(context, node)
-        elif isinstance(node.op, _ast.USub):
-            # unary subtraction returns a signed integer always
-            return self.signed_variant
-        elif not isinstance(node.op, _ast.Not):
-            # unary addition, inversion returns self type
-            # unary not is only supported for booleans
-            return self
-        else:
+        op = node.op
+        if isinstance(op, _ast.Not):
             raise TypeResolutionError(
                 "The 'not' operator is not supported for values of type '%s'." % 
                 self.name, node.operand)
+        else:
+            min_sizeof = self.min_sizeof
+            if min_sizeof < 4:
+                # chars and shorts are widened according to C99
+                if self.unsigned:
+                    if isinstance(node.op, _ast.USub):
+                        return context.backend.int_t
+                    return context.backend.uint_t
+                return context.backend.int_t
+            elif isinstance(op, _ast.USub):
+                # unary subtraction returns a signed integer always
+                return self.signed_variant
+            else:
+                return self
     
     def generate_UnaryOp(self, context, node):
         op = context.visit(node.op)
@@ -536,10 +536,11 @@ class IntegerType(ScalarType):
                 return self
         else:
             raise TypeResolutionError(
-                "Cannot assign a value of type '%s' to a variable of type '%s'." % 
-                (new_type.name, self.name), None)
+                "Cannot assign a value of type '%s' to a variable of type '%s'." \
+                % (new_type.name, self.name), None)
     
     def validate_AugAssign(self, context, node):
+        # TODO: Need to check value too right?
         context.concrete_fn.generic_fn.local_variables[node.target.id].resolve(context)
 
     def generate_AugAssign(self, context, node):
@@ -577,31 +578,117 @@ class IntegerType(ScalarType):
         #pass
     
 class FloatType(ScalarType):
-    pass
-    #def resolve_UnaryOp(self, context, node):
-        # TODO: implement this
-        #pass
+    @property
+    def sizeof(self):
+        return self.min_sizeof
     
-    #def generate_UnaryOp(self, context, node):
-        # TODO: implement this
-        #pass
+    def resolve_UnaryOp(self, context, node):
+        op = node.op
+        if isinstance(op, (_ast.USub, _ast.UAdd)):
+            sizeof = self.sizeof
+            if sizeof < 4: # half
+                return context.backend.float_t
+            return self
+        else:
+            raise TypeResolutionError(
+                "The 'not' operator is not supported for values of type '%s'." % 
+                self.name, node.operand)
     
-    #def resolve_BinOp(self, context, node):
-        # TODO: implement this
-        #pass
+    def generate_UnaryOp(self, context, node):
+        op = context.visit(node.op)
+        operand = context.visit(node.operand)
+        
+        code = ("(", op.code, operand.code, ")")
+        
+        return astx.copy_node(node,
+            op=op,
+            operand=operand,
+            
+            code=code
+        )
+        
+    def resolve_BinOp(self, context, node):
+        right_type = node.right.unresolved_type.resolve(context)
+        if isinstance(right_type, FloatType):
+            self_sizeof = self.sizeof
+            right_sizeof = right_type.sizeof
+            
+            if self_sizeof >= right_sizeof:
+                if self_sizeof > 2:
+                    return self
+                else:
+                    return context.backend.float_t
+            elif right_sizeof > 2:
+                return right_type
+            else:
+                return context.backend.float_t
+        elif isinstance(right_type, IntegerType):
+            if self.sizeof > 2:
+                return self
+            else:
+                return context.backend.float_t    
+        
+    def generate_BinOp(self, context, node):
+        left = context.visit(node.left)
+        op = context.visit(node.op)
+        right = context.visit(node.right)
+        
+        code = ("(", left.code, " ", op.code, " ", right.code, ")")
+        
+        return astx.copy_node(node,
+            left=left,
+            op=op,
+            right=right,
+            
+            code=code
+        )
+        
+    def resolve_MultipleAssignment(self, context, node):
+        new_type = node.unresolved_type.new.unresolved_type.resolve(context)
+        if self == new_type:
+            return new_type
+        elif isinstance(new_type, FloatType):
+            if new.sizeof > self.sizeof:
+                return new
+            else:
+                return self
+        elif isinstance(new_type, IntegerType):
+            return self
+        else:
+            raise TypeResolutionError(
+                "Cannot assign a value of type '%s' to a variable of type '%s'." \
+                % (new_type.name, self.name), None)
+            
+    def validate_AugAssign(self, context, node):
+        # TODO: Need to check value too right?
+        context.concrete_fn.generic_fn.local_variables[node.target.id].resolve(context)
     
-    #def generate_BinOp(self, context, node):
-        # TODO: implement this
-        #pass
-    
-    #def resolve_MultipleAssignment(self, context, node):
-        # TODO: implement this
-        #pass
-    
-    #def validate_AugAssign(self, context, node):
-        # TODO: implement tihis
-        #pass
-    
+    def generate_AugAssign(self, context, node):
+        target = context.visit(node.target)
+        value = context.visit(node.value)
+        op = context.visit(node.op)
+        
+        # TODO: I don't know whats going on here...
+        # add declaration
+        id = target.id
+        local_variables = context.generic_fn.local_variables
+        if id in local_variables:
+            context.backend._add_declaration(context,
+                id, local_variables[id].resolve(context))
+            
+        # add code
+        context.stmts.append((self.generate_AugAssign_stmt(
+            target.code,
+            op.code,
+            value.code), context.end_stmt))
+        
+        # add node
+        context.body.append(astx.copy_node(node,
+            target=target,
+            value=value,
+            op=op
+        ))
+        
     #def resolve_Call(self, context, node):
         # TODO: implement this
         #pass
@@ -611,6 +698,10 @@ class FloatType(ScalarType):
         #pass
     
 class PtrType(Type):
+    def __init__(self, target_type):
+        self.target_type = target_type
+        Type.__init__(self, target_type.name + "*")
+        
     target_type = None
     """The target type of the pointer."""
     
@@ -618,7 +709,7 @@ class PtrType(Type):
     max_sizeof = 8
     
     #def resolve_BinOp(self, context, node):
-        # TODO: impleent this
+        # TODO: implement this
         #pass
     
     #def generate_BinOp(self, context, node):
@@ -629,17 +720,32 @@ class PtrType(Type):
         # TODO: implement this
         #pass
     
-    #def resolve_Subscript(self, context, node):
+    def resolve_Subscript(self, context, node):
+        slice_type = node.slice.unresolved_type.resolve(context)
+        if not isinstance(slice_type, IntegerType):
+            raise TypeResolutionError(
+                "Subscript index must be an integer, but saw a %s." %
+                slice_type.name)
+        else:
+            return self.target_type
+
+    def generate_Subscript(self, context, node):
+        value = context.visit(node.value)
+        slice = context.visit(node.slice)
+        
+        code = (value.code, "[", slice.code, "]")
+        
+        return astx.copy_node(node,
+            value=value,
+            slice=slice,
+            
+            code=code
+        )
+            
+    def validate_AssignSubscript(self, context, node):
         # TODO: implement this
-        #pass
-    
-    #def generate_Subscript(self, context, node):
-        # TODO: implement this
-        #pass
-    
-    #def validate_AssignSubscript(self, context, node):
-        # TODO: implement this
-        #pass
+        return True
+
     
     def generate_AssignSubscript(self, context, node):
         target = context.visit(node.targets[0])        
@@ -651,9 +757,9 @@ class PtrType(Type):
             value=value
         ))       
     
-    #def validate_AugAssignSubscript(self, context, node):
+    def validate_AugAssignSubscript(self, context, node):
         # TODO: implement this
-        #pass
+        return True
     
     def generate_AugAssignSubscript(self, context, node):
         target = context.visit(node.target)
