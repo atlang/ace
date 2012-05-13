@@ -312,8 +312,8 @@ class Type(object):
             "Type '%s' does not support the 'return' statement." % 
             self.name, node.func)
         
-    def resolve_MultipleAssignment(self, context, node):
-        new_type = node.new.unresolved_type.resolve(context)
+    def resolve_MultipleAssignment(self, context, prev, new, node):
+        new_type = new.resolve(context)
         if self == new_type:
             return new_type
         else:
