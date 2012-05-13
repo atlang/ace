@@ -355,7 +355,9 @@ class GenericFnVisitor(_ast.NodeVisitor):
             test=test,
             body=body,
             orelse=orelse)
-        new_node.unresolved_type=MultipleAssignmentURT(body, orelse, new_node)
+        new_node.unresolved_type=MultipleAssignmentURT(body.unresolved_type, 
+                                                       orelse.unresolved_type, 
+                                                       new_node)
         return new_node
 
     def visit_Call(self, node):                                                     
@@ -482,7 +484,7 @@ class GenericFnVisitor(_ast.NodeVisitor):
                 if id in self.local_variables:
                     # multiple assignment of a local variable
                     self.local_variables[id] = MultipleAssignmentURT(
-                        current_type, self.cur_assignment_type, node)
+                        current_type, self.cur_assignment_type, name)
                 elif id in self.free_variables:
                     raise InvalidOperationError(
                         "Free variables cannot be assigned to.", node)
@@ -726,6 +728,8 @@ class MultipleAssignmentURT(UnresolvedType):
         UnresolvedType.__init__(self, node)
         self.prev = prev
         self.new = new
+        assert isinstance(prev, UnresolvedType)
+        assert isinstance(new, UnresolvedType)
         
     def __str__(self):
         return "%s <=> %s" % (str(self.prev.unresolved_type), 
@@ -738,7 +742,7 @@ class MultipleAssignmentURT(UnresolvedType):
     @cypy.memoize
     def resolve(self, context):
         prev, new, node = self.prev, self.new, self.node
-        prev_type = prev.unresolved_type.resolve(context)
+        prev_type = prev.resolve(context)
         
         _resolving_name = context._resolving_name
         if _resolving_name:
@@ -993,7 +997,8 @@ class ConcreteFnVisitor(_ast.NodeVisitor):
     
     def visit_Subscript(self, node):
         context = self.context
-        new = context.backend.generate_Subscript(context, node)
+        value_type = node.value.unresolved_type.resolve(context)
+        new = value_type.generate_Subscript(context, node)
         clq_type = node.unresolved_type.resolve(context)
         new.clq_type = context.observe(clq_type, node)
         return new
