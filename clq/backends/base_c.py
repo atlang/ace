@@ -13,7 +13,7 @@ class Backend(clq.Backend):
         clq.Backend.__init__(self, name)
         
     def init_context(self, context):
-        context.modifiers = [ ]
+        context.modifiers = [ "__kernel" ]
         context.declarations = [ ]
         context.end_stmt = ";\n"
         
@@ -28,7 +28,7 @@ class Backend(clq.Backend):
         g.append((" ", name, "("))
         g.append(cypy.join(self._yield_arg_str(context), ", "))
         g.append((") {\n", context.tab))
-        g.append(cypy.join(context.declarations, "\n"))
+        g.append((cypy.join(context.declarations, "\n"), "\n\n"))
         g.append(context.stmts)
         g.append((context.untab, "\n}\n"))
         return clq.ProgramItem(name, g.code)
@@ -37,7 +37,8 @@ class Backend(clq.Backend):
         concrete_fn = context.concrete_fn
         for arg_name, arg_type in zip(concrete_fn.generic_fn.arg_names, 
                                       concrete_fn.arg_types):
-            yield (arg_type.name, " ", arg_name)
+            if not isinstance(arg_type, clq.VirtualType):
+                yield (arg_type.name, " ", arg_name)
     
     def _generate_name(self, context):
         # TODO: proper namespacing
@@ -47,7 +48,7 @@ class Backend(clq.Backend):
         decl = type.name + " " + id + ";"
         decls = context.declarations
         if decl not in decls:
-            decls.add(decl)
+            decls.append(decl)
             
     ######################################################################
     ## Types
@@ -70,7 +71,11 @@ class Backend(clq.Backend):
             return self.float_t
         
     def generate_Num(self, context, node):
-        return str(node.n)
+        code = str(node.n)
+        
+        return astx.copy_node(node,
+            code = code                  
+        )
 
     int_t = None
     float_t = None
@@ -79,7 +84,10 @@ class Backend(clq.Backend):
         return self.string_t
     
     def generate_Str(self, context, node):
-        return cypy.string_escape(node.s)
+        code = cypy.string_escape(node.s)
+        
+        return astx.copy_node(node,
+            code = code)
     
     string_t = None
     
@@ -133,7 +141,7 @@ class Backend(clq.Backend):
             context.visit(stmt)
         context.body = parent_body
         
-        context.stmts.append((context.untab, "\n}"))
+        context.stmts.append((context.untab, "}\n"))
         
         context.body.append(astx.copy_node(node,
             test=test,
@@ -155,13 +163,17 @@ class Backend(clq.Backend):
         num_else = len(orelse)
         if num_else == 0:
             context.stmts.append((context.untab, "}\n"))
-            orelse = [ ]
+            new_orelse = [ ]
         elif num_else == 1:
-            context.stmts.append(" else ")
-            orelse = [context.visit(orelse[0])]
+            context.stmts.append((context.untab, 
+                                  "} else ", 
+                                  context.tab))
+            new_orelse = [context.visit(orelse[0])]
+            context.stmts.append(context.untab)
         else:
-            context.stmts.append((" else {\n", context.tab))
-            orelse = context.body = [ ]
+            context.stmts.append((context.untab,
+                                  "} else {\n", context.tab))
+            new_orelse = context.body = [ ]
             for stmt in orelse:
                 context.visit(stmt)
             context.body = parent_body
@@ -170,11 +182,11 @@ class Backend(clq.Backend):
         context.body.append(astx.copy_node(node,
             test=test,
             body=body,
-            orelse=orelse
+            orelse=new_orelse
         ))
         
     def generate_Expr(self, context, node):
-        value = context.visit(node.vaue)
+        value = context.visit(node.value)
         context.stmts.append((value.code, context.end_stmt))
         context.body.append(astx.copy_node(node,
             value=value
@@ -194,7 +206,7 @@ class Backend(clq.Backend):
         
     def generate_Exec(self, context, node):
         body = node.body
-        context.stmts.append(body.s)
+        context.stmts.append((body.s, "\n"))
         context.body.append(astx.copy_node(node,
             body=astx.copy_node(body),
             globals=[],
@@ -336,6 +348,18 @@ class BoolType(Type):
             raise TypeResolutionError(
                 "Invalid unary operation on operand of type '%s'." % 
                 self.name, node.operand)
+            
+    def generate_UnaryOp(self, context, node):
+        op = context.visit(node.op)
+        operand = context.visit(node.operand)
+        
+        code = ("(", op.code, "(", operand.code, "))")
+        return astx.copy_node(node,
+            op=op,
+            operand=operand,
+            
+            code=code
+        )
     
 class ScalarType(Type):
     min = None
@@ -375,16 +399,16 @@ class ScalarType(Type):
     in which case it is promoted to a long.
     """
     
-    def resolve_Comparison(self, context, node):
+    def resolve_Compare(self, context, node):
         right_type = node.comparators[0].unresolved_type.resolve(context)
         if not isinstance(right_type, ScalarType):
             raise TypeResolutionError(
                 "Cannot compare values of type '%s' and '%s'." % 
                 (self.name, right_type.name), node)
         
-        return context.backend.bool_type(context, node)
+        return context.backend.bool_t
     
-    def generate_Comparison(self, context, node):
+    def generate_Compare(self, context, node):
         left = context.visit(node.left)
         right = context.visit(node.comparators[0])
         op = context.visit(node.ops[0])
@@ -434,7 +458,7 @@ class IntegerType(ScalarType):
         op = context.visit(node.op)
         operand = context.visit(node.operand)
         
-        code = ("(", op.code, operand.code, ")")
+        code = ("(", op.code, "(", operand.code, "))")
         
         return astx.copy_node(node,
             op=op,
@@ -492,6 +516,7 @@ class IntegerType(ScalarType):
             return right_type
     
     def generate_BinOp(self, context, node):
+        # TODO: abstract this away for all the bin op supporters
         left = context.visit(node.left)
         op = context.visit(node.op)
         right = context.visit(node.right)
@@ -506,8 +531,8 @@ class IntegerType(ScalarType):
             code=code
         )
     
-    def resolve_MultipleAssignment(self, context, node):
-        new_type = node.unresolved_type.new.unresolved_type.resolve(context)
+    def resolve_MultipleAssignment(self, context, prev, new, node):
+        new_type = new.resolve(context)
         try:
             return self._resolve_MultipleAssignment(new_type)
         except TypeResolutionError as e:
@@ -609,6 +634,14 @@ class FloatType(ScalarType):
         
     def resolve_BinOp(self, context, node):
         right_type = node.right.unresolved_type.resolve(context)
+        try:
+            return self._resolve_BinOp(node.op, right_type, context.backend)
+        except TypeResolutionError as e:
+            if e.node is None:
+                e.node = node
+            raise e
+
+    def _resolve_BinOp(self, op, right_type, backend):
         if isinstance(right_type, FloatType):
             self_sizeof = self.sizeof
             right_sizeof = right_type.sizeof
@@ -617,16 +650,16 @@ class FloatType(ScalarType):
                 if self_sizeof > 2:
                     return self
                 else:
-                    return context.backend.float_t
+                    return backend.float_t
             elif right_sizeof > 2:
                 return right_type
             else:
-                return context.backend.float_t
+                return backend.float_t
         elif isinstance(right_type, IntegerType):
             if self.sizeof > 2:
                 return self
             else:
-                return context.backend.float_t    
+                return backend.float_t    
         
     def generate_BinOp(self, context, node):
         left = context.visit(node.left)
@@ -643,8 +676,17 @@ class FloatType(ScalarType):
             code=code
         )
         
-    def resolve_MultipleAssignment(self, context, node):
-        new_type = node.unresolved_type.new.unresolved_type.resolve(context)
+    def resolve_MultipleAssignment(self, context, prev, new, node):
+        new_type = new.resolve(context)
+        try:
+            return self._resolve_MultipleAssignment(new_type)
+        except TypeResolutionError as e:
+            if e.node is None:
+                e.node = node
+            raise e
+    
+    @cypy.memoize
+    def _resolve_MultipleAssignment(self, new_type):
         if self == new_type:
             return new_type
         elif isinstance(new_type, FloatType):
@@ -708,6 +750,30 @@ class PtrType(Type):
     min_sizeof = 4
     max_sizeof = 8
     
+    def resolve_BinOp(self, context, node):
+        right_type = node.right.unresolved_type.resolve(context)
+        if isinstance(right_type, IntegerType) and isinstance(node.op, _ast.Add):
+            return self
+        else:
+            # TODO: Pointer differences (with special OpenCL logic)
+            raise TypeResolutionError(
+                "Invalid binary operation with pointer.", node)
+            
+    def generate_BinOp(self, context, node):
+        left = context.visit(node.left)
+        op = context.visit(node.op)
+        right = context.visit(node.right)
+        
+        code = ("(", left.code, " ", op.code, " ", right.code, ")")
+        
+        return astx.copy_node(node,
+            left=left,
+            op=op,
+            right=right,
+            
+            code=code
+        )
+
     #def resolve_BinOp(self, context, node):
         # TODO: implement this
         #pass
