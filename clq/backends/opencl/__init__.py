@@ -225,7 +225,9 @@ class PtrType(base_c.PtrType, Type):
     def __init__(self, target_type, address_space):
         self.target_type = target_type
         self.address_space = address_space
-        Type.__init__(self, "%s %s*" % (address_space, target_type))
+        # TODO: pointers to pointers (does OpenCL actually support that?)
+        Type.__init__(self, "%s %s*" % (address_space, 
+                                        target_type.name))
         
     target_type = None
     address_space = None
@@ -311,6 +313,7 @@ class Backend(base_c.Backend):
     int_t = int
     uint_t = uint
     float_t = float
+    bool_t = bool
     string_t = None # char.private_ptr
 
 #############################################################################
@@ -487,6 +490,7 @@ class ReservedKeyword(object):
 builtins = { }
 """A map from built-in and reserved names to their corresponding descriptor."""
 
+# TODO: These don't actually do any error checking
 # Work-Item Built-in Functions [6.11.1]
 get_work_dim = BuiltinFn("get_work_dim", lambda D: uint)
 """The ``get_work_dim`` builtin function."""
