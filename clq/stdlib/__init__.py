@@ -31,8 +31,8 @@ def div(a, b):
 # Random Number Generation
 ################################################################################
 @clq.fn
-def simple_randf(state):
-    """A simple random number generator."""
+def simple_randf(state, get_global_id):
+    #"""A simple random number generator."""
     gid = get_global_id(0)
     x = state[gid] * 0xFD43FD + 0xC39EC3
     state[gid] = x
@@ -44,13 +44,13 @@ def _simple_randf_initializer(size):
 simple_randf.initializer = _simple_randf_initializer
     
 @clq.fn
-def randexp(state, randf=simple_randf):
-    """Generates an exponential random number."""
-    return -log(randf(state)) #@UndefinedVariable
+def randexp(state, randf, log, get_global_id):
+    #"""Generates an exponential random number."""
+    return -log(randf(state, get_global_id)) 
 
 @clq.fn
 def randn(state, randf=simple_randf):
-    """Generates a normal random number."""
+    #"""Generates a normal random number."""
     u1 = randf(state)
     u2 = randf(state)
     r = sin(6.28318531*u2)*sqrt(-2.0*log(u1)) #@UndefinedVariable
