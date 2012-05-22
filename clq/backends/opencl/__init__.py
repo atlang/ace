@@ -314,7 +314,7 @@ class Backend(base_c.Backend):
     uint_t = uint
     float_t = float
     bool_t = bool
-    string_t = None # char.private_ptr
+    string_t = None # TODO: char.private_ptr
 
 #############################################################################
 ## OpenCL Extension descriptors
