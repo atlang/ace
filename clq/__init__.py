@@ -227,6 +227,17 @@ class Type(object):
     def __repr__(self):
         return str(self)
     
+    def has_subtype(self, candidate_subtype):
+        """ Returns true if candidate_subtype <: class. This should be implemented by classes
+            that can be subtyped. """
+        return False
+    
+    def coerce_to(self, supertype):
+        """ The coercion function on the derivation of the rule with the 
+            conclusion class <: supertype. """
+        return None
+    
+    
     def observe(self, context, node):
         """Called when this type has been assigned to an expression, given by 
         ``node``."""
@@ -425,16 +436,25 @@ class ConcreteFnType(VirtualType):
         VirtualType.__init__(self, concrete_fn.name)
         self.concrete_fn = concrete_fn
         
+        
+    def _type_check(self, (type, expected_type)):
+        #TODO-NRF comment this. This is the fixed point idea.
+        return True
+
     def resolve_Call(self, context, node):
         arg_types = tuple(arg.unresolved_type.resolve(context)
                           for arg in node.args)
         concrete_fn = self.concrete_fn
         fn_arg_types = concrete_fn.arg_types
+
+#        argsets = zip(arg_types, fn_arg_types)
+#        for argset in argsets:
+#            if not self._type_check(argset):
         if arg_types != fn_arg_types:
-            raise TypeResolutionError(
-                "Argument types are not compatible. Got %s, expected %s." %
-                (str(arg_types), str(fn_arg_types)), node)
-        
+                raise TypeResolutionError(
+                    "Argument types are not compatible. Got %s, expected %s." %
+                    (str(arg_types), str(fn_arg_types)), node)
+
         return concrete_fn.return_type
     
     def generate_Call(self, context, node):
@@ -446,7 +466,7 @@ class Backend(object):
     """Abstract base class for a backend language specification."""
     def __init__(self, name):
         self.name = name
-        
+                
     def init_context(self, context):
         """Initializes a :class:`context <Context>`."""
         pass
@@ -519,6 +539,11 @@ class Backend(object):
     def generate_op(self, context, node):
         raise CodeGenerationError(
             "Backend does not support operators.", node)
+    
+    ## Defined interfaces for extensions
+    def string_type(self):
+        raise Error("This backend does not support string types")
+    string_t = None
 
 class Context(object):
     """Contains contextual information that is used during type resolution 

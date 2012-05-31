@@ -423,6 +423,9 @@ class ScalarType(Type):
             code=code
         )
         
+    def string_name(self):
+        return string_t
+        
 class IntegerType(ScalarType):
     unsigned = False
     """A boolean indicating whether this is an unsigned integer type."""

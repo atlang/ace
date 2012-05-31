@@ -78,6 +78,17 @@ class BoolType(base_c.BoolType, Type):
 bool = BoolType()
 
 #===============================================================================
+# Strings
+#===============================================================================
+class StrType(Type):
+    @classmethod
+    def _make_type(cls, name):
+        s = StrType(name)
+        return s
+
+string = StrType._make_type('char*') # TODO: char.private_ptr
+
+#===============================================================================
 # Integers
 #===============================================================================
 class IntegerType(base_c.IntegerType, ScalarType):
@@ -308,13 +319,16 @@ def t(name):
 class Backend(base_c.Backend):   
     def __init__(self):
         base_c.Backend.__init__(self, "OpenCL")
+        
+    def string_type(self):
+        return StrType
 
     void_t = void
     int_t = int
     uint_t = uint
     float_t = float
     bool_t = bool
-    string_t = None # TODO: char.private_ptr
+    string_t = string
 
 #############################################################################
 ## OpenCL Extension descriptors
