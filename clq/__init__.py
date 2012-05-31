@@ -437,25 +437,32 @@ class ConcreteFnType(VirtualType):
         self.concrete_fn = concrete_fn
         
         
-    def _type_check(self, (type, expected_type)):
-        #TODO-NRF comment this. This is the fixed point idea.
-        return True
-
+    def _get_type(self, (type, expected_type)):
+        """" return the type of the expression or None """
+        if type == expected_type: #types must uniquely inhabit an instance?
+            return self
+        else:
+            if type.has_subtype(expected_type):
+                return type.coerce_to(expected_type)
+        return None
+    
     def resolve_Call(self, context, node):
         arg_types = tuple(arg.unresolved_type.resolve(context)
                           for arg in node.args)
         concrete_fn = self.concrete_fn
         fn_arg_types = concrete_fn.arg_types
 
-#        argsets = zip(arg_types, fn_arg_types)
-#        for argset in argsets:
-#            if not self._type_check(argset):
-        if arg_types != fn_arg_types:
+        argsets = zip(arg_types, fn_arg_types)
+        for argset in argsets:
+            return_type = self._get_type(argset) 
+            if return_type != None:
+                return return_type
+            else:
                 raise TypeResolutionError(
                     "Argument types are not compatible. Got %s, expected %s." %
                     (str(arg_types), str(fn_arg_types)), node)
 
-        return concrete_fn.return_type
+        
     
     def generate_Call(self, context, node):
         return _generic_generate_Call(context, node)    

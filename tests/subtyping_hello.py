@@ -1,19 +1,19 @@
 import clq
 import clq.extensions
 import clq.backends.opencl as ocl
-
+import clq.extensions.grammar as grammars #the grammars extension.
 OpenCL = ocl.Backend()
 
 #t1 -- G1 <: G2
-G1 = clq.extensions.Grammar.factory(OpenCL,".")
-G2 = clq.extensions.Grammar.factory(OpenCL,".+")
+G1 = grammars.Grammar.factory(OpenCL,".")
+G2 = grammars.Grammar.factory(OpenCL,".+")
 assert G2.has_subtype(G1)
 
 #t2 -- Grammar
 @clq.fn
 def test(a):
     return a
-test = test.compile(OpenCL, clq.extensions.Grammar.factory(OpenCL, "."))
+test = test.compile(OpenCL, grammars.Grammar.factory(OpenCL, "."))
 print test.program_item.code
 
 
