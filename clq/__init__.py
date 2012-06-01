@@ -436,11 +436,10 @@ class ConcreteFnType(VirtualType):
         VirtualType.__init__(self, concrete_fn.name)
         self.concrete_fn = concrete_fn
         
-        
     def _get_type(self, (type, expected_type)):
         """" return the type of the expression or None """
         if type == expected_type: #types must uniquely inhabit an instance?
-            return self
+            return type
         else:
             if type.has_subtype(expected_type):
                 return type.coerce_to(expected_type)
@@ -452,19 +451,19 @@ class ConcreteFnType(VirtualType):
         concrete_fn = self.concrete_fn
         fn_arg_types = concrete_fn.arg_types
 
-        argsets = zip(arg_types, fn_arg_types)
-        for argset in argsets:
+        for argset in zip(arg_types, fn_arg_types):
             return_type = self._get_type(argset) 
-            if return_type != None:
-                return return_type
-            else:
+            
+            if return_type is None:
                 raise TypeResolutionError(
                     "Argument types are not compatible. Got %s, expected %s." %
                     (str(arg_types), str(fn_arg_types)), node)
 
-        
+        return concrete_fn.return_type
     
     def generate_Call(self, context, node):
+         # TODO: if the arg type and the spec type are different
+         # call the coerce method after visiting
         return _generic_generate_Call(context, node)    
 cypy.intern(ConcreteFnType)
 ConcreteFn.Type = ConcreteFnType
