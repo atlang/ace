@@ -230,12 +230,15 @@ class Type(object):
     def has_subtype(self, candidate_subtype):
         """ Returns true if candidate_subtype <: class. This should be implemented by classes
             that can be subtyped. """
-        return False
+        return self == candidate_subtype
     
     def coerce_to(self, supertype):
         """ The coercion function on the derivation of the rule with the 
             conclusion class <: supertype. """
-        return None
+        if self == supertype:
+            return self
+        else:
+            return None
     
     
     def observe(self, context, node):
@@ -438,12 +441,7 @@ class ConcreteFnType(VirtualType):
         
     def _get_type(self, (type, expected_type)):
         """" return the type of the expression or None """
-        if type == expected_type: #types must uniquely inhabit an instance?
-            return type
-        else:
-            if type.has_subtype(expected_type):
-                return type.coerce_to(expected_type)
-        return None
+        return type.coerce_to(expected_type)
     
     def resolve_Call(self, context, node):
         arg_types = tuple(arg.unresolved_type.resolve(context)
@@ -451,20 +449,100 @@ class ConcreteFnType(VirtualType):
         concrete_fn = self.concrete_fn
         fn_arg_types = concrete_fn.arg_types
 
-        for argset in zip(arg_types, fn_arg_types):
-            return_type = self._get_type(argset) 
-            
-            if return_type is None:
-                raise TypeResolutionError(
-                    "Argument types are not compatible. Got %s, expected %s." %
-                    (str(arg_types), str(fn_arg_types)), node)
+        #if arg_types != fn_arg_types:
+        #    raise TypeResolutionError(
+        #        "Argument types are not compatible. Got %s, expected %s." %
+        #        (str(arg_types), str(fn_arg_types)), node)
 
         return concrete_fn.return_type
     
     def generate_Call(self, context, node):
-         # TODO: if the arg type and the spec type are different
-         # call the coerce method after visiting
-        return _generic_generate_Call(context, node)    
+        # TODO: if the arg type and the spec type are different
+        # call the coerce method after visiting
+        
+        #These are the arg types we should coerce to
+        expected_arg_types = self.concrete_fn._arg_types
+        
+        #These are the arg types we really have.
+        arg_types = list()
+        for i in range(len(node.args)):
+            #Get the actual argument type for this argument
+            arg_type = node.args[i].unresolved_type.resolve(context)
+            
+            #Do coercion if necessary.
+            arg_type = arg_type.coerce_to(expected_arg_types[i])
+            if(arg_type == None):
+                raise TypeResolutionException("Couldn't coerce",node)
+            
+            #add to the arg_types list.
+            arg_types.append(arg_type)
+        
+        #visit the arguments
+        args = list()
+        for i,arg in enumerate(node.args):
+            if isinstance(arg_types[i], VirtualType):
+                continue
+            args.append(context.visit(arg))
+            
+        func = context.visit(node.func)
+        
+        code = (func.code, "(",
+                cypy.join((arg.code for arg in args), ", "),
+                ")")
+        
+        return astx.copy_node(node,
+            args=args,
+            func=func,
+            
+            code=code) 
+#        arg_types = list()
+#        for arg in node.args:
+#            arg_types.append(arg.unresolved_type.resolve(context))
+#
+#        func = context.visit(node.func)
+#    
+#        
+#        for i in range(len(arg_types)):
+#            if arg_types[i] != expected_types[i]:
+#                arg_types[i] = arg_types[i].coerce_to(expected_types[i])
+#        
+        
+        
+        #args = list()
+        #for i,arg in enumerate(node.args):
+        #    if isinstance(arg_types[i] , VirtualType):
+        #        continue
+        #    arg = context.visit(arg)
+        #    #arg = arg.coerce_to(arg_types[i])
+        #    args.append(arg)
+        
+        code = (func.code, "(",
+                cypy.join((arg.code for arg in args), ", "),
+                ")")
+        
+        return astx.copy_node(node,
+            args=args,
+            func=func,
+            
+            code=code) 
+        
+#        for arg in node.args:
+#            arg_type = arg.unresolved_type.resolve(context)
+#            if(arg != arg_type):
+#                arg_type = arg_type.coerce_to(arg) 
+#            resolved_args.append(arg_type)
+#        
+#        arg_types = tuple(arg.unresolved_type.resolve(context)
+#                          for arg in node.args)
+#        args = tuple(context.visit(arg)
+#                     for i, arg in enumerate(node.args)
+#                     if not isinstance(arg_types[i], VirtualType))
+#        
+#        #coerce if necessary. TODO is this right?
+#        for i in range(len(args)):
+#            args[i] = args[i].coerce_to(arg_types[i])
+#            
+    
 cypy.intern(ConcreteFnType)
 ConcreteFn.Type = ConcreteFnType
 

@@ -85,6 +85,28 @@ class StrType(Type):
     def _make_type(cls, name):
         s = StrType(name)
         return s
+    
+    def resolve_BinOp(self,context,node):
+        right_type = node.right.unresolved_type.resolve(context)
+        if isinstance(right_type, StrType):
+            return self
+        raise clq.TypeResolutionError("Must be a string",node)
+    
+    def generate_BinOp(self, context, node):
+        left = context.visit(node.left)
+        op = context.visit(node.op)
+        right = context.visit(node.right)
+        
+        code = ("strcat" , "(", left.code, "," , right.code, ")")
+        
+        return astx.copy_node(node,
+            left=left,
+            op=op,
+            right=right,
+            
+            code=code
+        )
+    
 
 string = StrType._make_type('char*') # TODO: char.private_ptr
 
