@@ -7,7 +7,7 @@ OpenCL = ocl.Backend()
 #TEST: G1 <: G2
 G1 = grammars.Grammar.factory(OpenCL,".")
 G2 = grammars.Grammar.factory(OpenCL,".+")
-assert G2.has_subtype(G1)
+assert G2.is_subtype(G1)
 
 #TEST: Function returning a grammar
 @clq.fn

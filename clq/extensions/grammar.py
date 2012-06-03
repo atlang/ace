@@ -39,14 +39,14 @@ class Grammar(clq.Type):
             implies equivalence, so that will be the test used for interning the factory method. """
         return isinstance(right_grammar, Grammar) #TODO
     
-    def has_subtype(self, candidate_subtype):
+    def is_subtype(self, candidate_subtype):
         return self.includes(candidate_subtype)
 
-    def coerce_to(self, supertype):
+    def get_coerced(self, supertype):
         if self == supertype:
             return self
         
-        if(supertype.has_subtype(self)):
+        if(supertype.is_subtype(self)):
             new_type = Grammar.factory(self._backend, supertype._regex)
             return new_type
         else:
