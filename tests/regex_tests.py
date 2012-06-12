@@ -256,6 +256,11 @@ n2 = get_nfa("a")
 assert not n1.included_in(n2)
 
 
+n1 = get_nfa(".?.*")
+n2 = get_nfa(".*")
+assert n1.included_in(n2)
+assert n2.included_in(n1)
+
 n1 = get_nfa("a?")
 n2 = get_nfa("a")
 assert n2.included_in(n1)

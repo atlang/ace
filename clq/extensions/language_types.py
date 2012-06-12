@@ -2,37 +2,63 @@ import clq
 import cypy
 import cypy.astx as astx
 import clq.extensions.regex as regex
-      
-class Language(clq.Type):
-    """ Langauge types should be created using Language.factory, and not instantiated directly. """
+
+def get_singleton_language_type(cls,backend,regex_str):
+    """ returns the singleton type associated with a backend and all equivalent regular expressions. """
     
+    if not hasattr(get_singleton_language_type, "regex_list"): 
+        get_singleton_language_type.regex_list = dict()
+    
+    leftNFA = regex.NFA.parse(regex.Pattern(regex_str).get_regex())
+    
+    for [cmp_backend,cmp_regex_str] in get_singleton_language_type.regex_list.keys():
+        if cmp_backend != backend: continue
+        #Using the set theoretic definition of equivalence; an isomorphism test might be faster.
+        cmpNFA = regex.NFA.parse(regex.Pattern(cmp_regex_str).get_regex())
+        if leftNFA.included_in(cmpNFA) and cmpNFA.included_in(leftNFA):
+            return get_singleton_language_type.regex_list[frozenset({cmp_backend,cmp_regex_str})]
+    
+    #create a new language type.
+    new_lang_key = frozenset([backend,regex_str])
+    
+    LangType = type("Lang_" + Language.regex_to_name(regex_str), (Language,backend.string_type(),), {})
+    g = LangType(None)
+    g._backend = backend
+    g._regex = regex_str
+    g.name = Language.regex_to_name(g._regex)
+    
+    get_singleton_language_type.regex_list[new_lang_key] = g
+    return g
+    
+#@cypy.intern
+class Language(clq.Type):
+
     @classmethod
     def regex_to_name(cls, name):
         ret_val = ""
         for c in name:
             if c == ".":
                 ret_val += "Dot"
-            if c == "+":
+            elif c == "+":
                 ret_val += "Plus"
-            if c == "*":
+            elif c == "*":
                 ret_val += "Kleene"
+            elif c == "?":
+                ret_val += "Question"
+            elif c == "(":
+                ret_val += "LP"
+            elif c == ")":
+                ret_val += "RP"
+            else:
+                ret_val += c
         return ret_val
     
     @classmethod
-    @cypy.intern
-    def factory(cls, backend, regex):
-        """ This function should be interned s/t that hashing function returned based upon
-            regex equivalence. """
-        #inherit from Language and string.
-        LangType = type("Lang_" + Language.regex_to_name(regex), (Language,backend.string_type(),), {})
+    def factory(cls, backend, regex_str):
+        """ This function returns the single instance of a language type associated with
+            the backend and the class of equivalent regular expressions. """
+        return get_singleton_language_type(cls,backend,regex_str)
         
-        g = LangType(None)
-        g._backend = backend
-        g._regex = regex
-        g.name = Language.regex_to_name(g._regex)
-
-        return g
-            
     def includes(self, right):
         """ Returns true iff this language includes the right language. """
         if not isinstance(right, Language):
@@ -45,6 +71,13 @@ class Language(clq.Type):
     def is_subtype(self, candidate_subtype):
         return self.includes(candidate_subtype)
 
+    #generate is implemented in the backend.
+    def resolve_BinOp(self,context,node):
+        right_type = node.right.unresolved_type.resolve(context)
+        if not isinstance(right_type, Language):
+            raise clq.TypeResolutionError("Must be a language",node)
+        return Language.factory(self.backend, "(%s)(%s)" % (self._regex,right_type._regex))
+        
     def get_coerced(self, supertype):
         if self == supertype:
             return self

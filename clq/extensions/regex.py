@@ -1,5 +1,6 @@
 import cypy
 from itertools import *
+import copy
 
 class Pattern:
     """ Regular Expressions used to specify grammar types. 
@@ -140,12 +141,6 @@ class RegexParser:
                 return self._parse(regex, remaining[1:])
             else:
                 return regex
-#            regex = Alternative(Empty(), regex)
-#            regex.atomized = True
-#            if len(remaining) > 1:
-#                return self._parse(regex, remaining[1:])
-#            else:
-#                return regex
         
         elif c == self.sym_RP:
             return self._parse(regex, remaining[1:])
@@ -281,6 +276,15 @@ class NFA:
         self.q      = list()        # states (Q)
         self.transitions = list()   # transition function
         self.final_states = list()  # final state.
+    
+    def copy(self):
+        nfa = NFA()
+        nfa.q0 = self.q0
+        for q in self.q: nfa.q.append(q)
+        for t in self.transitions: nfa.add_transition(t.state, t.input, t.new_state)
+        for f in self.final_states: nfa.final_states.append(f)
+        return nfa
+    
         
     def gv_code(self):
         q0_printed = False
@@ -479,7 +483,6 @@ class NFA:
         sigma = list()
         for t in self.transitions:
             if not t.input in sigma: sigma.append(t.input)
-        if len(sigma) == 0 : sigma = ["a"]
         
         nfa2dfa = dict() #{set of states in self} -> DFA state
         nfa2dfa[frozenset([self.q0])] = state_counter
@@ -523,17 +526,22 @@ class NFA:
         """ A list of all non-wildcard input symbols for this FA """
         sigma = list()
         for t in self.transitions:
-            if t == None: continue
+            if t.input == None: continue
             if not t.input in sigma: sigma.append(t.input)
         return sigma
     
     def bind_wildcards(self, sigma):
+        transitions_to_add = list()
+        transitions_to_remove = list()
         for t in self.transitions:
             if t.input == None:
+                transitions_to_remove.append(t)
                 for s in sigma:
                     if s == None: continue
-                    self.add_transition(t.state, s, t.new_state)
-                self.transitions.remove(t)
+                    transitions_to_add.append(TransitionFunction(t.state,s,t.new_state))
+        for t in transitions_to_remove: self.transitions.remove(t)
+        for t in transitions_to_add:
+            self.add_transition(t.state, t.input, t.new_state)
     
     def included_in(self, right):
         return not self.has_unshared_final_state(right, False)
@@ -548,13 +556,18 @@ class NFA:
         #make the alphabet
         sigma = self.alphabet()
         for s in right.alphabet():
-            if not s in sigma and s != None: sigma.append(s)
+            if not s in sigma and s != None: 
+                sigma.append(s)
+        
+        #Add at least one char in case wildcards are the only characters involved.
+        if len(sigma) == 0:
+            sigma.append(".")
         
         #bind the NFAs    
-        bound_self = self
+        bound_self = self.copy()
         bound_self.bind_wildcards(sigma)
         
-        bound_right = right
+        bound_right = right.copy()
         bound_right.bind_wildcards(sigma)
         
         #convert NFAs to DFAs
@@ -594,42 +607,10 @@ class NFA:
                         return True    
                      
             if not found_lockstep:
-                r_val = self._has_unshared_final_state(right, self_t.new_state, right_state, self_t.input, right_t.input, checked, False)
+                r_val = self._has_unshared_final_state(right, self_t.new_state, right_state, self_t.input, None, checked, False)
                 if r_val:
                     return True 
         return False
-            
-            
-#        for t in self.transitions:
-#            if t.state != self_state: 
-#                continue
-#            #get the input used for this transition.
-#            input = t.input
-#            
-#            #will have a non-None value at the end of the loop if we found at least one transition.
-#            other_transition = None
-#            
-#            for candidate_transition in right.transitions:
-#                #if this candidate's transition matches the current transition 
-#                if candidate_transition.state == right_state and (input == None or candidate_transition == None or candidate_transition.input == input):
-#                    #indicate we found a valid transition.
-#                    other_transition = candidate_transition
-#                    
-#                    if self_state in self.final_states and not right_state in right.final_states:
-#                        return True
-#        
-#                    #recurse on the new transition
-#                    ret_val = self._has_unshared_final_state(right, t.new_state, other_transition.new_state, checked)
-#                    if ret_val == True:
-#                        return True
-#                    
-#                
-#            #make sure we found at least one transition.
-#            if other_transition == None:
-#                return False #???
-#            
-#        return False
-
 
     def get_complement(self):
         """ returns the complement of self. """
