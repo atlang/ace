@@ -1,26 +1,28 @@
 import clq
 import clq.extensions
 import clq.backends.opencl as ocl
-import clq.extensions.grammar as grammars #the grammars extension.
+import clq.extensions.language_types as lang #the regex types extension.
 OpenCL = ocl.Backend()
 
-#TEST: G1 <: G2
-G1 = grammars.Grammar.factory(OpenCL,".")
-G2 = grammars.Grammar.factory(OpenCL,".+")
-assert G2.is_subtype(G1)
+#TEST: Reflection and grammar inclusion
+L1 = lang.Language.factory(OpenCL,".")
+L2 = lang.Language.factory(OpenCL,".+")
+assert L1.is_subtype(L1)
+assert L2.is_subtype(L2)
+assert L2.is_subtype(L1) #This is dependent on the regex_tests
 
-#TEST: Function returning a grammar
+#TEST: Function returning a Language
 @clq.fn
 def test(a):
     return a
-test = test.compile(OpenCL,  G1)
-assert test.return_type == G1
+test = test.compile(OpenCL,  L1)
+assert test.return_type == L1
 
-#TEST: Grammar factor interning. This fails b/c interning isn't working yet.
+#TEST: Language factor interning. This fails b/c interning isn't working yet.
 #@clq.fn
 #def test(a):
 #    return a
-#test = test.compile(OpenCL, grammars.Grammar.factory(OpenCL, G1._regex))
+#test = test.compile(OpenCL, lang.Language.factory(OpenCL, G1._regex))
 #assert test.return_type == G1
 
 
@@ -28,17 +30,17 @@ assert test.return_type == G1
 @clq.fn
 def myFn(a):
     return a
-myFn = myFn.compile(OpenCL, G1)
+myFn = myFn.compile(OpenCL, L1)
 
 @clq.fn
 def myFn2(a, myFn):
     return  a + myFn(a) #Note: This reads "append myFn(a) to a; meaning the type of a is preserved.
-myFn2 = myFn2.compile(OpenCL, G2, myFn.cl_type)
+myFn2 = myFn2.compile(OpenCL, L2, myFn.cl_type)
 
 @clq.fn
 def myFn3(a, myFn):
     return  myFn(a) + a
-myFn3 = myFn3.compile(OpenCL, G2, myFn.cl_type)
+myFn3 = myFn3.compile(OpenCL, L2, myFn.cl_type)
 
-assert myFn2.return_type == G2
-assert myFn3.return_type == G1
+assert myFn2.return_type == L2
+assert myFn3.return_type == L1

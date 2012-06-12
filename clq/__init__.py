@@ -469,7 +469,7 @@ class ConcreteFnType(VirtualType):
             #Do coercion if necessary.
             arg_type = arg_type.get_coerced(expected_arg_types[i])
             if arg_type == None:
-                raise TypeResolutionException("Couldn't coerce",node)
+                raise TypeResolutionError("Couldn't coerce",node)
             
             #add to the arg_types list.
             arg_types.append(arg_type)
