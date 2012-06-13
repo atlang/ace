@@ -271,6 +271,10 @@ n2 = get_nfa("a")
 assert n2.included_in(n1)
 assert not n1.included_in(n2)
 
+n1 = get_nfa("a+b")
+n2 = get_nfa("a?")
+assert not n2.included_in(n1)
+
 n1 = get_nfa("za?b")
 n2 = get_nfa("zab")
 assert n2.included_in(n1)
@@ -314,8 +318,6 @@ n1 = get_nfa("(nf|cy)@cmu\.edu")
 n2 = get_nfa("(nf|cy)@(andrew\.)?cmu\.edu")
 assert n1.included_in(n2)
 assert not n2.included_in(n1)
-
-
 
 #Non-mechanized tests
 #these tests are useful for finding errors, but if the above inclusion tests work then translation
