@@ -179,6 +179,11 @@ assert a.match("c")
 assert a.match("aaac")
 assert a.match("bbbc")
 
+a = r.Pattern("..+")
+assert not a.match("a")
+assert a.match("ab")
+assert a.match("abc")
+
 a = r.Pattern("(a+|b+)c")
 assert a.match("aaaaac")
 assert a.match("bbbbbc")
@@ -280,6 +285,21 @@ n1 = get_nfa(".")
 n2 = get_nfa(".+")
 assert n1.included_in(n2)
 
+n1 = get_nfa("(.)(.+)")
+n2 = get_nfa("..+")
+assert n2.included_in(n1)
+assert n1.included_in(n2)
+
+n1 = get_nfa("a+b")
+n2 = get_nfa("(a?)a+b")
+assert n2.included_in(n1)
+assert n1.included_in(n2)
+
+n1 = get_nfa(".?")
+n2 = get_nfa("a?")
+assert not (n2.included_in(n1) and n1.included_in(n2))
+
+
 n1 = get_nfa("aa?")
 n2 = get_nfa("a*")
 assert n1.included_in(n2)
@@ -294,6 +314,7 @@ n1 = get_nfa("(nf|cy)@cmu\.edu")
 n2 = get_nfa("(nf|cy)@(andrew\.)?cmu\.edu")
 assert n1.included_in(n2)
 assert not n2.included_in(n1)
+
 
 
 #Non-mechanized tests

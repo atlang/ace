@@ -110,9 +110,16 @@ class RegexParser:
             return Alternative(regex, self.parse(remaining[1:]))
         
         elif c == self.sym_AtLeastOne:
-            regex = Sequence(Repetition(regex), regex) #reptetition must come first.
+            if isinstance(regex,Combination) and not regex.atomized:
+                regex.right = Sequence(Repetition(regex.right), regex.right) #bind * before seq
+            else:
+                regex = Sequence(Repetition(regex), regex) #reptetition must come first.
             regex.atomized = True
-            return self._parse(regex, remaining[1:])
+            
+            if len(remaining) > 1:
+                return self._parse(regex, remaining[1:])
+            else:
+                return regex
         
         
         elif c == self.sym_Kleene:
@@ -562,6 +569,8 @@ class NFA:
         #Add at least one char in case wildcards are the only characters involved.
         if len(sigma) == 0:
             sigma.append(".")
+        #And also add a character so that other characters don't gain generality?
+        sigma.append("SP")
         
         #bind the NFAs    
         bound_self = self.copy()

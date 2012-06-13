@@ -11,7 +11,13 @@ def get_singleton_language_type(cls,backend,regex_str):
     
     leftNFA = regex.NFA.parse(regex.Pattern(regex_str).get_regex())
     
-    for [cmp_backend,cmp_regex_str] in get_singleton_language_type.regex_list.keys():
+    for [s0,s1] in get_singleton_language_type.regex_list.keys():
+        if isinstance(s0,clq.Backend): 
+            cmp_backend = s0
+            cmp_regex_str = s1
+        else:
+            cmp_backend = s1
+            cmp_regex_str = s0
         if cmp_backend != backend: continue
         #Using the set theoretic definition of equivalence; an isomorphism test might be faster.
         cmpNFA = regex.NFA.parse(regex.Pattern(cmp_regex_str).get_regex())
@@ -76,7 +82,7 @@ class Language(clq.Type):
         right_type = node.right.unresolved_type.resolve(context)
         if not isinstance(right_type, Language):
             raise clq.TypeResolutionError("Must be a language",node)
-        return Language.factory(self.backend, "(%s)(%s)" % (self._regex,right_type._regex))
+        return Language.factory(self._backend, "(%s)(%s)" % (self._regex,right_type._regex))
         
     def get_coerced(self, supertype):
         if self == supertype:
