@@ -21,9 +21,15 @@ class Pattern:
         self.pattern = pattern
 
     def included_in(self, right):
+        """ returns true iff self is a sublanguage of right. """
         left_nfa = NFA.parse(self.get_regex())
         right_nfa = NFA.parse(right.get_regex())
         return left_nfa.included_in(right_nfa)
+    
+    def at(self, n):
+        """ returns a new Pattern defining the nth character of this pattern. """
+        nfa = NFA.parse(self.get_regex())
+        return nfa.pattern_of_char_at(n)
     
     def __eq__(self, other):
         """ Using a set theoretic definition -- equivalence is bidirectional inclusion. 
@@ -284,6 +290,28 @@ class NFA:
         self.transitions = list()   # transition function
         self.final_states = list()  # final state.
     
+    def pattern_of_char_at(self, n):
+        if(n == 0): return Pattern("") #base
+        
+        states = list()
+        states.append(self.q0)
+        for i in range(n-1):
+            new_states = list()
+            for t in self.transitions:
+                if t.state in states and not t.new_state in new_states:
+                    new_states.append(t.new_state)
+            states = new_states
+        
+        possible_chars = list()
+        for t in self.transitions:
+            if t.state in states and not t.input in possible_chars:
+                possible_chars.append(t.input)
+        
+        regex_str = ""
+        for char in possible_chars:
+            regex_str = regex_str + char + "|"
+        return Pattern(regex_str[:-1])
+            
     def copy(self):
         nfa = NFA()
         nfa.q0 = self.q0
