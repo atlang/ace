@@ -1,7 +1,5 @@
 import clq.extensions.regex as r
 
-#TODONF: Generate all of the productions. Fairly confident matching works
-
 ###############################################
 #            Pattern Matching                 #
 ###############################################
@@ -225,8 +223,6 @@ assert not a.match("ab")
 ###############################################
 #            Regex->NFAs,Inclusion            #
 ###############################################
-# TODO generate test cases.
-# TODO when generating pattern matching test cases, also do equivalence tests for NFAs.
 
 def print_nfa(pattern):
     n = get_nfa(pattern)

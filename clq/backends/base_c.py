@@ -423,7 +423,7 @@ class ScalarType(Type):
             code=code
         )
         
-    def string_name(self):
+    def string_type(self):
         return string_t
         
 class IntegerType(ScalarType):

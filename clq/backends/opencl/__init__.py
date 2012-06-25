@@ -88,9 +88,19 @@ class StrType(Type):
     
     def resolve_BinOp(self,context,node):
         right_type = node.right.unresolved_type.resolve(context)
-        if isinstance(right_type, StrType):
-            return self
-        raise clq.TypeResolutionError("Must be a string",node)
+        
+        try:
+            return self._resolve_BinOp(node.op, right_type, context.backend)
+        except TypeResolutionError as e:
+            if e.node is None:
+                e.node = node
+            raise e
+    
+    def _resolve_BinOp(self,op,right_type,backend):
+        if(isinstance(right_type, StrType)):
+            return StrType
+        else:
+            raise clq.TypeResolutionError("Must be a string",node)
     
     def generate_BinOp(self, context, node):
         left = context.visit(node.left)

@@ -228,8 +228,10 @@ class Type(object):
         return str(self)
     
     def is_subtype(self, candidate_subtype):
-        """ Returns true if candidate_subtype <: class. This should be implemented by classes
-            that can be subtyped. Subtyping has a reflection rule by default. """
+        """ Returns true if candidate_subtype is a subtype of self (candidate <: self). For example,
+            if A <: B and !(B <: A) then B.is_subtype(A) == True but A.is_subtype(B) == False. 
+            The default behavior for this rule implements reflection for subtyping (A <: A). 
+        """
         return self == candidate_subtype
     
     def get_coerced(self, supertype):
@@ -446,12 +448,12 @@ class ConcreteFnType(VirtualType):
         concrete_fn = self.concrete_fn
         fn_arg_types = concrete_fn.arg_types
 
-        #Ensure that each type is a subtype of the expected type. TODO ?
-        for i,arg in enumerate(arg_types):
-            if not arg.is_subtype(fn_arg_types[i]): #S <: S
+        #Ensure that each type is a subtype of the expected type.
+        for arg,arg_type in zip(arg_types, fn_arg_types):
+            if not arg.is_subtype(arg_type): #S <: S
                 raise TypeResolutionError(
                     "Argument types are not compatible. Got %s, expected %s." %
-                    (str(arg_types), str(fn_arg_types)), node)
+                    (str(arg), str(arg_type)), node)
 
         return concrete_fn.return_type
     
@@ -469,15 +471,15 @@ class ConcreteFnType(VirtualType):
             #Do coercion if necessary.
             arg_type = arg_type.get_coerced(expected_arg_types[i])
             if arg_type == None:
-                raise TypeResolutionError("Couldn't coerce",node)
+                raise TypeResolutionError("Couldn't coerce %s to %s" % (strtype(arg_type),strtype(expected_arg_types[i]),node))
             
             #add to the arg_types list.
             arg_types.append(arg_type)
         
         #visit the arguments
         args = list()
-        for i,arg in enumerate(node.args):
-            if isinstance(arg_types[i], VirtualType):
+        for arg,arg_type in zip(node.args,arg_types):
+            if isinstance(arg_type, VirtualType):
                 continue
             args.append(context.visit(arg))
             

@@ -1,5 +1,4 @@
 import clq
-import clq.extensions
 import clq.backends.opencl as ocl
 
 OpenCL = ocl.Backend()

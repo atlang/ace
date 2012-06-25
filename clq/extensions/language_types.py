@@ -27,18 +27,20 @@ def get_singleton_language_type(cls,backend,regex_str):
     #create a new language type.
     new_lang_key = frozenset([backend,regex_str])
     
-    LangType = type("Lang_" + Language.regex_to_name(regex_str), (Language,backend.string_type(),), {})
+    LangType = type("Lang_" + ConstrainedString.regex_to_name(regex_str), (ConstrainedString,backend.string_type(),), {})
     g = LangType(None)
     g._backend = backend
     g._regex = regex_str
-    g.name = Language.regex_to_name(g._regex)
+    g.name = g._backend.string_t.name
+    #g.name = ConstrainedString.regex_to_name(g._regex)
     
     get_singleton_language_type.regex_list[new_lang_key] = g
     return g
     
 #@cypy.intern
-class Language(clq.Type):
-
+class ConstrainedString(clq.Type):
+    """" The Regular Expression paramterized type. """
+    
     @classmethod
     def regex_to_name(cls, name):
         ret_val = ""
@@ -67,7 +69,7 @@ class Language(clq.Type):
         
     def includes(self, right):
         """ Returns true iff this language includes the right language. """
-        if not isinstance(right, Language):
+        if not isinstance(right, ConstrainedString):
             return False
         
         leftNFA  = regex.NFA.parse(regex.Pattern(self._regex).get_regex())
@@ -80,16 +82,25 @@ class Language(clq.Type):
     #generate is implemented in the backend.
     def resolve_BinOp(self,context,node):
         right_type = node.right.unresolved_type.resolve(context)
-        if not isinstance(right_type, Language):
-            raise clq.TypeResolutionError("Must be a language",node)
-        return Language.factory(self._backend, "(%s)(%s)" % (self._regex,right_type._regex))
+        try:
+            return self._resolve_BinOp(node.op, right_type, context.backend)
+        except TypeResolutionError as e:
+            if e.node is None:
+                e.node = e
+            raise e
+    
+    def _resolve_BinOp(self, op, right_type, backend):
+        if isinstance(right_type, ConstrainedString):
+            return ConstrainedString.factory(self._backend, "(%s)(%s)" % (self._regex,right_type._regex))
+        else:
+            raise clq.TypeResolutionError("Must be a ConstrainedString",node)
         
     def get_coerced(self, supertype):
         if self == supertype:
             return self
         
         if(supertype.is_subtype(self)):
-            new_type = Language.factory(self._backend, supertype._regex)
+            new_type = ConstrainedString.factory(self._backend, supertype._regex)
             return new_type
         else:
             return None
