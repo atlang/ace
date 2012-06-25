@@ -87,6 +87,8 @@ class StrType(Type):
         return s
     
     def resolve_BinOp(self,context,node):
+        if not isinstance(node.op, _ast.Add):
+            raise clq.TypeResolutionError("Operation %s is not supported on Strings" % str(node.op), node)
         right_type = node.right.unresolved_type.resolve(context)
         
         try:

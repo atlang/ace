@@ -2,6 +2,7 @@ import clq
 import cypy
 import cypy.astx as astx
 import clq.extensions.regex as regex
+import ast as _ast
 
 def get_singleton_language_type(cls,backend,regex_str):
     """ returns the singleton type associated with a backend and all equivalent regular expressions. """
@@ -81,10 +82,13 @@ class ConstrainedString(clq.Type):
 
     #generate is implemented in the backend.
     def resolve_BinOp(self,context,node):
+        if not isinstance(node.op, _ast.Add):
+            raise clq.TypeResolutionError("Operation %s is not supported on Strings" % str(node.op), node)
+        
         right_type = node.right.unresolved_type.resolve(context)
         try:
             return self._resolve_BinOp(node.op, right_type, context.backend)
-        except TypeResolutionError as e:
+        except clq.TypeResolutionError as e:
             if e.node is None:
                 e.node = e
             raise e
