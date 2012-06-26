@@ -243,7 +243,6 @@ class Type(object):
         else:
             return None
     
-    
     def observe(self, context, node):
         """Called when this type has been assigned to an expression, given by 
         ``node``."""
@@ -395,7 +394,48 @@ class Type(object):
         raise CodeGenerationError(
             "Type '%s' does not support augmented assignment to a subscript." % 
             self.name, node.target.value)
-            
+
+    def resolve_Ascribe(self, context, node):
+        """ Ascription using ascribe() """
+        term = node.args[0]
+        type = node.args[1]
+        
+        term_type = term.unresolved_type.resolve(context)
+        type_type = type.unresolved_type.resolve(context)
+        
+        return type_type
+    
+    def generate_Ascribe(self, context, node):
+        """ TODONF should insert runtime checks on downcasts. """
+        #casting term to type.
+        term = node.args[0].unresolved_type.resolve(context)
+        type = node.args[1].unresolved_type.resolve(context)
+
+        if not type.is_subtype(term):
+            context.stmts.append("CHECK;\n") #TODONF
+        
+        retval = context.visitor.visit(node.args[0])
+        
+        return retval
+    
+    """ Type of ascription opertors """
+    def resolve_Call(self, context, node):
+        if node.func.id == "ascribe":
+            return self.resolve_Ascribe(context, node)
+        
+        else:
+            raise TypeResolutionError("Could not resolve that call.", node.func)
+    
+    def generate_Call(self, context, node):
+        if node.func.id == "ascribe":
+            return self.generate_Ascribe(context, node)
+        
+        else:
+            raise CodeGenerationError(
+                                      "Type '%s' does not support the call operation." % 
+                                      self.name, node.func)
+
+        
 class VirtualType(Type):
     """Designates a type that does not have a concrete representation (e.g. 
     singleton function types)."""
@@ -471,7 +511,7 @@ class ConcreteFnType(VirtualType):
             #Do coercion if necessary.
             arg_type = arg_type.get_coerced(expected_arg_types[i])
             if arg_type == None:
-                raise TypeResolutionError("Couldn't coerce %s to %s" % (strtype(arg_type),strtype(expected_arg_types[i]),node))
+                raise TypeResolutionError("Couldn't coerce types",node)
             
             #add to the arg_types list.
             arg_types.append(arg_type)

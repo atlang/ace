@@ -65,7 +65,7 @@ test_concatenation = test_concatenation.compile(OpenCL, super, sub)
 assert test_concatenation.return_type == lang.ConstrainedString.factory(OpenCL,"..+")  
 
 #TEST: Subtyping
-super_type = lang.ConstrainedString.factory(OpenCL, "a+b")
+super_type = lang.ConstrainedString.factory(OpenCL, "a+")
 sub_type   = lang.ConstrainedString.factory(OpenCL, "a")
 
 @clq.fn
@@ -85,10 +85,10 @@ assert assign_to_sub.return_type == super_type
 def return_super(a, b, return_sub):
     return return_sub(b) + a
 return_super = return_super.compile(OpenCL, super_type, sub_type, return_sub.cl_type)
-assert return_super.return_type == lang.ConstrainedString   .factory(OpenCL, "aa+b")
+assert return_super.return_type == lang.ConstrainedString.factory(OpenCL, "aa+")
 print return_super.program_item.code
 
-#The example below fails because the lhs must be a subtype of the rhs.
+# The example below fails because the lhs must be a subtype of the rhs.
 @clq.fn
 def fail_check(a, return_sub):
     return return_sub(a) + a
@@ -99,15 +99,32 @@ try:
 except clq.TypeResolutionError:
     assert True
 
-# The failure of this test is unrelated to subtyping, but is an error in Ace's typing that came up while
-# testing subtyping:
+
+# TEST:  Ascription
+@clq.fn
+def upcast(a,b):
+    return ascribe(a,b)
+upcast = upcast.compile(OpenCL, sub_type, super_type)
+assert upcast.return_type == super_type
+print upcast.program_item.code
+
+@clq.fn
+def downcast(a,b):
+    return ascribe(a,b)
+downcast = downcast.compile(OpenCL, super_type, sub_type)
+assert downcast.return_type == sub_type
+print downcast.program_item.code
+
+
+# FAIL
 #@clq.fn
 #def assign(a,b):
 #    a = b
 #    return a
 #try:
-#    assign_if = assign.compile(OpenCL, ocl.int, ocl.float)
-#    assign_if.return_type #should result in an error; assigning a flaot to an int.
-#    assert ocl.float.is_subtype(ocl.int)
+#    assign_if = assign.compile(OpenCL, super_type, return_sub.cl_type)
+#    assign_if.return_type #should result in an error; assigning a supertype to a subtype.
+#    assert False
+#    #assert ocl.float.is_subtype(ocl.int)
 #except clq.TypeResolutionError:
 #    assert True

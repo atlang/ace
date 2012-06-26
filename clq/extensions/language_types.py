@@ -108,3 +108,20 @@ class ConstrainedString(clq.Type):
             return new_type
         else:
             return None
+    
+    def generate_Ascribe(self, context, node):
+        term = node.args[0].unresolved_type.resolve(context)
+        type = node.args[1].unresolved_type.resolve(context)
+        
+        retval = context.visitor.visit(node.args[0])
+        
+        return retval
+        
+        
+#        self._backend.string_t.generate()
+#        
+#        if not term.is_subtype(type):
+#            pass #TODO insert check.
+#        
+#        term = context.visit(term)
+#        return astx.copy_node(node)

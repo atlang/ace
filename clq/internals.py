@@ -1,5 +1,5 @@
 import ast as _ast # http://docs.python.org/library/ast.html
-
+import clq
 import cypy
 import cypy.astx as astx
 
@@ -666,7 +666,7 @@ class BoolOpURT(UnresolvedType):
         node = self.node
         left_type = node.values[0].unresolved_type.resolve(context)
         return left_type.resolve_BoolOp(context, node)
-        
+       
 class NameURT(UnresolvedType):
     """The unresolved type of variables."""
     def __str__(self):
@@ -680,6 +680,13 @@ class NameURT(UnresolvedType):
         node = self.node
         id = node.id
         
+        
+        # handle special cases
+        # TODO handle this in a cleaner way.
+        if id == "ascribe":
+            return clq.Type("") #Ascribe TODONF
+        
+        # handle non-special cases
         try:
             # is it an argument?
             return context.concrete_fn.arg_map[id]
