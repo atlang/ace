@@ -395,6 +395,10 @@ class Type(object):
             "Type '%s' does not support augmented assignment to a subscript." % 
             self.name, node.target.value)
 
+    def generate_check(self, context, node):
+        """ generate code for checking a cast """
+        raise CodeGenerationError("Type does not support runtime cast checks", node)
+        
     def resolve_Ascribe(self, context, node):
         """ Ascription using ascribe() """
         term = node.args[0]
@@ -406,17 +410,18 @@ class Type(object):
         return type_type
     
     def generate_Ascribe(self, context, node):
-        """ TODONF should insert runtime checks on downcasts. """
+        """ should insert runtime checks on downcasts. """
         #casting term to type.
         term = node.args[0].unresolved_type.resolve(context)
         type = node.args[1].unresolved_type.resolve(context)
 
         if not type.is_subtype(term):
-            context.stmts.append("CHECK;\n") #TODONF
+            type.generate_check(context,node)
         
         retval = context.visitor.visit(node.args[0])
         
         return retval
+
     
     """ Type of ascription opertors """
     def resolve_Call(self, context, node):

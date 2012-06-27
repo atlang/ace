@@ -86,7 +86,6 @@ def return_super(a, b, return_sub):
     return return_sub(b) + a
 return_super = return_super.compile(OpenCL, super_type, sub_type, return_sub.cl_type)
 assert return_super.return_type == lang.ConstrainedString.factory(OpenCL, "aa+")
-print return_super.program_item.code
 
 # The example below fails because the lhs must be a subtype of the rhs.
 @clq.fn
@@ -106,17 +105,39 @@ def upcast(a,b):
     return ascribe(a,b)
 upcast = upcast.compile(OpenCL, sub_type, super_type)
 assert upcast.return_type == super_type
-print upcast.program_item.code
 
 @clq.fn
 def downcast(a,b):
     return ascribe(a,b)
 downcast = downcast.compile(OpenCL, super_type, sub_type)
 assert downcast.return_type == sub_type
-print downcast.program_item.code
+
+@clq.fn
+def impossiblecast(a,b):
+    return ascribe(a,b)
+try:
+    impossiblecast = impossiblecast.compile(OpenCL, super_type, ocl.int)
+    print impossiblecast.program_item.code
+    assert False
+except clq.CodeGenerationError as e:
+    assert True #should fail b/c ocl.int doesn't support runtime cast checks.
 
 
-# FAIL
+#this is always a downcast, so there should always be a check.
+@clq.fn
+def topcast(a):
+    return ascribe("some user input",a)
+topcast = topcast.compile(OpenCL, super_type)
+assert topcast.return_type == super_type
+
+#This is always an upcast, so there should never be a check.
+@clq.fn
+def bottomcast(a):
+    return ascribe(a, "string") #how to use a type variable here?
+bottomcast = bottomcast.compile(OpenCL, super_type)
+assert bottomcast.return_type == ocl.string
+
+# FAIL; something's wrong with resolve_Assign.
 #@clq.fn
 #def assign(a,b):
 #    a = b

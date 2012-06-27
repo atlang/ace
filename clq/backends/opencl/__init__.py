@@ -5,6 +5,7 @@ import cypy.astx as astx
 import clq
 from clq import TypeResolutionError
 import clq.backends.base_c as base_c
+import clq.extensions.language_types as cstrings
 
 _globals = globals() # used to create lists of types below
 
@@ -85,6 +86,13 @@ class StrType(Type):
     def _make_type(cls, name):
         s = StrType(name)
         return s
+    
+    def is_subtype(self, candidate_type):
+        """ In addition to reflection, StrType is the top type for the ConstrainedString relation. """
+        if isinstance(candidate_type, cstrings.ConstrainedString):
+            return True
+        else:
+            return candidate_type == StrType
     
     def resolve_BinOp(self,context,node):
         if not isinstance(node.op, _ast.Add):
@@ -357,6 +365,21 @@ class Backend(base_c.Backend):
     def string_type(self):
         return StrType
 
+    def check_ConstrainedString_cast(self,context,node):
+        term = node.args[0].unresolved_type.resolve(context)
+        type = node.args[1].unresolved_type.resolve(context)
+        
+        if isinstance(term, cstrings.ConstrainedString):
+            context.stmts.append("if( !match(" + node.args[0].id + ",\"" + type._regex + "\") ) {\n")
+            context.stmts.append("\texit(0); //give error\n")
+            context.stmts.append("}\n\n")
+        elif isinstance(term, StrType):
+            context.stmts.append("if( !match(\"" + node.args[0].s + "\",\"" + type._regex + "\") ) {\n")
+            context.stmts.append("\texit(0); //give error\n")
+            context.stmts.append("}\n\n")
+        else:
+            context.stmts.append("exit(0); //that isn't possible.\n") #that coercion isn't possible.
+    
     void_t = void
     int_t = int
     uint_t = uint
