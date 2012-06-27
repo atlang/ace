@@ -366,23 +366,30 @@ class Backend(base_c.Backend):
         return StrType
 
     def check_ConstrainedString_cast(self,context,node):
-        """ generates code for checking casts of ConstrainedString and String types """
+        """ Generates code for downcasts to ConstrainedString types.
+        
+            Dynamic checking for downcasts to ConstrainedStrings is 
+            only supported for ConstrainedStrings and StrTypes. 
+        """
         term = node.args[0].unresolved_type.resolve(context)
         type = node.args[1].unresolved_type.resolve(context)
         
+        
+        # Note: the code generated here is wrong anyways because ascribe can be part of an expression.
         if isinstance(term, cstrings.ConstrainedString):
+            pass
             #match( string, regex ) returns true iff string matches regex.
-            context.stmts.append("//Insert check: match(" + node.args[0].id + "," + type._regex + ")\n")
 #            context.stmts.append("if( !match(" + node.args[0].id + ",\"" + type._regex + "\") ) {\n")
 #            context.stmts.append("\texit(0); //give error\n")
 #            context.stmts.append("}\n\n")
         elif isinstance(term, StrType):
-            context.stmts.append("//Insert check: match(" + node.args[0].s + "," + type._regex + ")\n")
+            pass
 #            context.stmts.append("if( !match(\"" + node.args[0].s + "\",\"" + type._regex + "\") ) {\n")
 #            context.stmts.append("\texit(0); //give error\n")
 #            context.stmts.append("}\n\n")
         else:
-            context.stmts.append("//Checked fail: no runtime checking strategy.\n")
+            pass
+#            context.stmts.append("//Checked fail: no runtime checking strategy.\n")
     
     void_t = void
     int_t = int
