@@ -99,7 +99,7 @@ class ConstrainedString(clq.Type):
         else:
             raise clq.TypeResolutionError("Must be a ConstrainedString",node)
         
-    def get_coerced(self, supertype):
+    def coerce(self, supertype):
         if self == supertype:
             return self
         

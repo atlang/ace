@@ -234,7 +234,7 @@ class Type(object):
         """
         return self == candidate_subtype
     
-    def get_coerced(self, supertype):
+    def coerce(self, supertype):
         """ The coercion function on the derivation of the rule with the 
             conclusion class <: supertype. Should return a type equiv to supertype or None if no
             coercion exists. """
@@ -514,7 +514,7 @@ class ConcreteFnType(VirtualType):
             arg_type = node.args[i].unresolved_type.resolve(context)
             
             #Do coercion if necessary.
-            arg_type = arg_type.get_coerced(expected_arg_types[i])
+            arg_type = arg_type.coerce(expected_arg_types[i])
             if arg_type == None:
                 raise TypeResolutionError("Couldn't coerce types",node)
             
