@@ -27,21 +27,18 @@ def get_singleton_language_type(cls,backend,regex_str):
     
     #create a new language type.
     new_lang_key = frozenset([backend,regex_str])
-    
-    LangType = type("Lang_" + ConstrainedString.regex_to_name(regex_str), (ConstrainedString,backend.string_type(),), {})
-    g = LangType(None)
+
+    g = ConstrainedString(backend.string_t.name)
     g._backend = backend
     g._regex = regex_str
-    g.name = g._backend.string_t.name
-    #g.name = ConstrainedString.regex_to_name(g._regex)
     
     get_singleton_language_type.regex_list[new_lang_key] = g
     return g
-    
-#@cypy.intern
+
+
 class ConstrainedString(clq.Type):
-    """" The Regular Expression paramterized type. """
-    
+    """" The Regular Expression paramterized type. """        
+
     @classmethod
     def regex_to_name(cls, name):
         ret_val = ""
@@ -67,9 +64,9 @@ class ConstrainedString(clq.Type):
         """ This function returns the single instance of a language type associated with
             the backend and the class of equivalent regular expressions. """
         return get_singleton_language_type(cls,backend,regex_str)
-        
+    
     def includes(self, right):
-        """ Returns true iff this language includes the right language. """
+        """ Returns true iff this language includes the right language. """        
         if not isinstance(right, ConstrainedString):
             return False
         
@@ -78,9 +75,10 @@ class ConstrainedString(clq.Type):
         return rightNFA.included_in(leftNFA)
     
     def is_subtype(self, candidate_subtype):
+        if self == candidate_subtype: return True
         return self.includes(candidate_subtype)
 
-    #generate is implemented in the backend.
+    #generate is implemented in the backend.    
     def resolve_BinOp(self,context,node):
         if not isinstance(node.op, _ast.Add):
             raise clq.TypeResolutionError("Operation %s is not supported on Strings" % str(node.op), node)
@@ -112,16 +110,17 @@ class ConstrainedString(clq.Type):
     def generate_check(self, context, node):
         term = node.args[0].unresolved_type.resolve(context)
         type = node.args[1].unresolved_type.resolve(context)
-        
         self._backend.check_ConstrainedString_cast(context,node)
     
+    def generate_BinOp(self,context,node):
+        return self._backend.string_type()(self._backend.string_t).generate_BinOp(context,node)
+    def resolve_Return(self,context,node):
+        return self._backend.string_type()(self._backend.string_t).resolve_Return(context,node)
+    def generate_Return(self,context,node):
+        return self._backend.string_type()(self._backend.string_t).generate_Return(context,node)
+    def validate_Assign(self,context,node):
+        return self._backend.string_type()(self._backend.string_t).validate_Assign(context,node)
+    def generate_Assign(self, context, node):
+        return self._backend.string_type()(self._backend.string_t).generate_Assign(context,node)
             
-        
-        
-#        self._backend.string_t.generate()
-#        
-#        if not term.is_subtype(type):
-#            pass #TODO insert check.
-#        
-#        term = context.visit(term)
-#        return astx.copy_node(node)
+  

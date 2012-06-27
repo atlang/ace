@@ -366,19 +366,23 @@ class Backend(base_c.Backend):
         return StrType
 
     def check_ConstrainedString_cast(self,context,node):
+        """ generates code for checking casts of ConstrainedString and String types """
         term = node.args[0].unresolved_type.resolve(context)
         type = node.args[1].unresolved_type.resolve(context)
         
         if isinstance(term, cstrings.ConstrainedString):
-            context.stmts.append("if( !match(" + node.args[0].id + ",\"" + type._regex + "\") ) {\n")
-            context.stmts.append("\texit(0); //give error\n")
-            context.stmts.append("}\n\n")
+            #match( string, regex ) returns true iff string matches regex.
+            context.stmts.append("//Insert check: match(" + node.args[0].id + "," + type._regex + ")\n")
+#            context.stmts.append("if( !match(" + node.args[0].id + ",\"" + type._regex + "\") ) {\n")
+#            context.stmts.append("\texit(0); //give error\n")
+#            context.stmts.append("}\n\n")
         elif isinstance(term, StrType):
-            context.stmts.append("if( !match(\"" + node.args[0].s + "\",\"" + type._regex + "\") ) {\n")
-            context.stmts.append("\texit(0); //give error\n")
-            context.stmts.append("}\n\n")
+            context.stmts.append("//Insert check: match(" + node.args[0].s + "," + type._regex + ")\n")
+#            context.stmts.append("if( !match(\"" + node.args[0].s + "\",\"" + type._regex + "\") ) {\n")
+#            context.stmts.append("\texit(0); //give error\n")
+#            context.stmts.append("}\n\n")
         else:
-            context.stmts.append("exit(0); //that isn't possible.\n") #that coercion isn't possible.
+            context.stmts.append("//Checked fail: no runtime checking strategy.\n")
     
     void_t = void
     int_t = int

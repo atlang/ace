@@ -326,7 +326,7 @@ class Type(object):
     def generate_Return(self, context, node):
         raise CodeGenerationError(
             "Type '%s' does not support the 'return' statement." % 
-            self.name, node.func)
+            self.name, node)
         
     def resolve_MultipleAssignment(self, context, prev, new, node):
         new_type = new.resolve(context)
