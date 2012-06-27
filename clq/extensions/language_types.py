@@ -4,41 +4,14 @@ import cypy.astx as astx
 import clq.extensions.regex as regex
 import ast as _ast
 
-def get_singleton_language_type(cls,backend,regex_str):
-    """ returns the singleton type associated with a backend and all equivalent regular expressions. """
-    
-    if not hasattr(get_singleton_language_type, "regex_list"): 
-        get_singleton_language_type.regex_list = dict()
-    
-    leftNFA = regex.NFA.parse(regex.Pattern(regex_str).get_regex())
-    
-    for [s0,s1] in get_singleton_language_type.regex_list.keys():
-        if isinstance(s0,clq.Backend): 
-            cmp_backend = s0
-            cmp_regex_str = s1
-        else:
-            cmp_backend = s1
-            cmp_regex_str = s0
-        if cmp_backend != backend: continue
-        #Using the set theoretic definition of equivalence; an isomorphism test might be faster.
-        cmpNFA = regex.NFA.parse(regex.Pattern(cmp_regex_str).get_regex())
-        if leftNFA.included_in(cmpNFA) and cmpNFA.included_in(leftNFA):
-            return get_singleton_language_type.regex_list[frozenset({cmp_backend,cmp_regex_str})]
-    
-    #create a new language type.
-    new_lang_key = frozenset([backend,regex_str])
-
-    g = ConstrainedString(backend.string_t.name)
-    g._backend = backend
-    g._regex = regex_str
-    
-    get_singleton_language_type.regex_list[new_lang_key] = g
-    return g
-
-
 class ConstrainedString(clq.Type):
     """" The Regular Expression paramterized type. """        
 
+    def __init__(self, backend, regex):
+        self._backend = backend
+        self._regex = regex
+        self.name = self._backend.string_t.name
+    
     @classmethod
     def regex_to_name(cls, name):
         ret_val = ""
@@ -58,6 +31,9 @@ class ConstrainedString(clq.Type):
             else:
                 ret_val += c
         return ret_val
+    
+    def __eq__(self, right):
+        return self.includes(right) and right.includes(self)
     
     @classmethod
     def factory(cls, backend, regex_str):
@@ -93,7 +69,7 @@ class ConstrainedString(clq.Type):
     
     def _resolve_BinOp(self, op, right_type, backend):
         if isinstance(right_type, ConstrainedString):
-            return ConstrainedString.factory(self._backend, "(%s)(%s)" % (self._regex,right_type._regex))
+            return ConstrainedString(self._backend, "(%s)(%s)" % (self._regex,right_type._regex))
         else:
             raise clq.TypeResolutionError("Must be a ConstrainedString",node)
         
@@ -102,7 +78,7 @@ class ConstrainedString(clq.Type):
             return self
         
         if(supertype.is_subtype(self)):
-            new_type = ConstrainedString.factory(self._backend, supertype._regex)
+            new_type = ConstrainedString(self._backend, supertype._regex)
             return new_type
         else:
             return None
@@ -122,5 +98,6 @@ class ConstrainedString(clq.Type):
         return self._backend.string_type()(self._backend.string_t).validate_Assign(context,node)
     def generate_Assign(self, context, node):
         return self._backend.string_type()(self._backend.string_t).generate_Assign(context,node)
-            
+cypy.intern(ConstrainedString)
+
   

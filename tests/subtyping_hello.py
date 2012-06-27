@@ -5,22 +5,22 @@ import clq.extensions.language_types as lang #the regex types extension.
 OpenCL = ocl.Backend()
 
 #TEST: Memoizing Language based on regular expression equivalence
-L1 = lang.ConstrainedString.factory(OpenCL, "(.?)+")
-L2 = lang.ConstrainedString.factory(OpenCL, ".*")
+L1 = lang.ConstrainedString(OpenCL, "(.?)+")
+L2 = lang.ConstrainedString(OpenCL, ".*")
 assert L1 == L2
 
 assert L1.is_subtype(L2)
 assert L2.is_subtype(L1)
-L3 = lang.ConstrainedString.factory(OpenCL, ".?")
+L3 = lang.ConstrainedString(OpenCL, ".?")
 assert L1 != L3
-subtype_of_l1 = lang.ConstrainedString.factory(OpenCL, ".+")
+subtype_of_l1 = lang.ConstrainedString(OpenCL, ".+")
 assert subtype_of_l1 != L1
 
 #TODO test to make sure memoizing is backend-specific.
 
 #TEST: Reflection and grammar inclusion
-L1 = lang.ConstrainedString.factory(OpenCL,".")
-L2 = lang.ConstrainedString.factory(OpenCL,".+")
+L1 = lang.ConstrainedString(OpenCL,".")
+L2 = lang.ConstrainedString(OpenCL,".+")
 assert L1 != L2
 assert L1.is_subtype(L1)
 assert L2.is_subtype(L2)
@@ -39,7 +39,7 @@ def test(a):
     return a
 test1 = test.compile(OpenCL,  L1)
 assert test1.return_type == L1
-L3 = lang.ConstrainedString.factory(OpenCL, L1._regex)
+L3 = lang.ConstrainedString(OpenCL, L1._regex)
 test2 = test.compile(OpenCL, L3)
 assert test2.return_type == L3
 
@@ -47,7 +47,7 @@ assert test2.return_type == L3
 @clq.fn
 def test2(a):
     return a
-test2 = test2.compile(OpenCL, lang.ConstrainedString.factory(OpenCL, L1._regex))
+test2 = test2.compile(OpenCL, lang.ConstrainedString(OpenCL, L1._regex))
 assert test2.return_type == L1
 
 
@@ -56,17 +56,17 @@ assert test2.return_type == L1
 ## The subtyping requirement is somewhat arbitrary.
 
 #TEST: Return type of concatenation
-sub = lang.ConstrainedString.factory(OpenCL, ".")
-super = lang.ConstrainedString.factory(OpenCL, ".+")
+sub = lang.ConstrainedString(OpenCL, ".")
+super = lang.ConstrainedString(OpenCL, ".+")
 @clq.fn
 def test_concatenation(a,b):
     return a + b
 test_concatenation = test_concatenation.compile(OpenCL, super, sub)
-assert test_concatenation.return_type == lang.ConstrainedString.factory(OpenCL,"..+")  
+assert test_concatenation.return_type == lang.ConstrainedString(OpenCL,"..+")  
 
 #TEST: Subtyping
-super_type = lang.ConstrainedString.factory(OpenCL, "a+")
-sub_type   = lang.ConstrainedString.factory(OpenCL, "a")
+super_type = lang.ConstrainedString(OpenCL, "a+")
+sub_type   = lang.ConstrainedString(OpenCL, "a")
 
 @clq.fn
 def return_sub(x):
@@ -85,7 +85,7 @@ assert assign_to_sub.return_type == super_type
 def return_super(a, b, return_sub):
     return return_sub(b) + a
 return_super = return_super.compile(OpenCL, super_type, sub_type, return_sub.cl_type)
-assert return_super.return_type == lang.ConstrainedString.factory(OpenCL, "aa+")
+assert return_super.return_type == lang.ConstrainedString(OpenCL, "aa+")
 
 # The example below fails because the lhs must be a subtype of the rhs.
 @clq.fn
@@ -129,6 +129,7 @@ def topcast(a):
     return ascribe("some user input",a)
 topcast = topcast.compile(OpenCL, super_type)
 assert topcast.return_type == super_type
+#print topcast.program_item.code
 
 #This is always an upcast, so there should never be a check.
 @clq.fn
