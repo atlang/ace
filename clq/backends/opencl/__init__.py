@@ -369,27 +369,10 @@ class Backend(base_c.Backend):
         """ Generates code for downcasts to ConstrainedString types.
         
             Dynamic checking for downcasts to ConstrainedStrings is 
-            only supported for ConstrainedStrings and StrTypes. 
+            not supported by the openCL backend because no regex library
+            exists. 
         """
-        term = node.args[0].unresolved_type.resolve(context)
-        type = node.args[1].unresolved_type.resolve(context)
-        
-        
-        # Note: the code generated here is wrong anyways because ascribe can be part of an expression.
-        if isinstance(term, cstrings.ConstrainedString):
-            pass
-            #match( string, regex ) returns true iff string matches regex.
-#            context.stmts.append("if( !match(" + node.args[0].id + ",\"" + type._regex + "\") ) {\n")
-#            context.stmts.append("\texit(0); //give error\n")
-#            context.stmts.append("}\n\n")
-        elif isinstance(term, StrType):
-            pass
-#            context.stmts.append("if( !match(\"" + node.args[0].s + "\",\"" + type._regex + "\") ) {\n")
-#            context.stmts.append("\texit(0); //give error\n")
-#            context.stmts.append("}\n\n")
-        else:
-            pass
-#            context.stmts.append("//Checked fail: no runtime checking strategy.\n")
+        pass
     
     void_t = void
     int_t = int

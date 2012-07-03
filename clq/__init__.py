@@ -425,21 +425,21 @@ class Type(object):
     
     """ Type of ascription opertors """
     def resolve_Call(self, context, node):
-        if node.func.id == "ascribe":
-            return self.resolve_Ascribe(context, node)
-        
-        else:
-            raise TypeResolutionError("Could not resolve that call.", node.func)
+        raise TypeResolutionError("Could not resolve that call.", node.func)
     
     def generate_Call(self, context, node):
-        if node.func.id == "ascribe":
-            return self.generate_Ascribe(context, node)
-        
-        else:
-            raise CodeGenerationError(
-                                      "Type '%s' does not support the call operation." % 
-                                      self.name, node.func)
+        raise CodeGenerationError(
+                                  "Type '%s' does not support the call operation." % 
+                                  self.name, node.func)
 
+
+class AscribeType(Type):
+    def resolve_Call(self,context,node):
+        return self.resolve_Ascribe(context, node)
+    
+    def generate_Call(self,context,node):
+        return self.generate_Ascribe(context,node)
+        
         
 class VirtualType(Type):
     """Designates a type that does not have a concrete representation (e.g. 

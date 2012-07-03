@@ -682,9 +682,8 @@ class NameURT(UnresolvedType):
         
         
         # handle special cases
-        # TODO handle this in a cleaner way.
         if id == "ascribe":
-            return clq.Type("") #Ascribe TODONF
+            return clq.AscribeType("")
         
         # handle non-special cases
         try:
