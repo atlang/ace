@@ -5,7 +5,7 @@ import clq.extensions.regex as regex
 import ast as _ast
 
 class ConstrainedString(clq.Type):
-    """" The Regular Expression paramterized type. """        
+    """" Regular expression types. """        
 
     def __init__(self, backend, regex):
         self._backend = backend
@@ -37,8 +37,7 @@ class ConstrainedString(clq.Type):
     
     @classmethod
     def factory(cls, backend, regex_str):
-        """ This function returns the single instance of a language type associated with
-            the backend and the class of equivalent regular expressions. """
+        """ Returns the singleton type associated backend and regex_str. """ 
         return get_singleton_language_type(cls,backend,regex_str)
     
     def includes(self, right):
@@ -57,7 +56,8 @@ class ConstrainedString(clq.Type):
     #generate is implemented in the backend.    
     def resolve_BinOp(self,context,node):
         if not isinstance(node.op, _ast.Add):
-            raise clq.TypeResolutionError("Operation %s is not supported on Strings" % str(node.op), node)
+            raise clq.TypeResolutionError("Operation %s is not supported on " +
+                                          "Strings" % str(node.op), node)
         
         right_type = node.right.unresolved_type.resolve(context)
         try:
@@ -69,7 +69,8 @@ class ConstrainedString(clq.Type):
     
     def _resolve_BinOp(self, op, right_type, backend):
         if isinstance(right_type, ConstrainedString):
-            return ConstrainedString(self._backend, "(%s)(%s)" % (self._regex,right_type._regex))
+            return ConstrainedString(self._backend, "(%s)(%s)" % 
+                                        (self._regex,right_type._regex))
         else:
             raise clq.TypeResolutionError("Must be a ConstrainedString",node)
         
@@ -89,15 +90,20 @@ class ConstrainedString(clq.Type):
         self._backend.check_ConstrainedString_cast(context,node)
     
     def generate_BinOp(self,context,node):
-        return self._backend.string_type()(self._backend.string_t).generate_BinOp(context,node)
+        return self._backend.string_type()(
+                self._backend.string_t).generate_BinOp(context,node)
     def resolve_Return(self,context,node):
-        return self._backend.string_type()(self._backend.string_t).resolve_Return(context,node)
+        return self._backend.string_type()(
+                self._backend.string_t).resolve_Return(context,node)
     def generate_Return(self,context,node):
-        return self._backend.string_type()(self._backend.string_t).generate_Return(context,node)
+        return self._backend.string_type()(
+                self._backend.string_t).generate_Return(context,node)
     def validate_Assign(self,context,node):
-        return self._backend.string_type()(self._backend.string_t).validate_Assign(context,node)
+        return self._backend.string_type()(
+                self._backend.string_t).validate_Assign(context,node)
     def generate_Assign(self, context, node):
-        return self._backend.string_type()(self._backend.string_t).generate_Assign(context,node)
+        return self._backend.string_type()(
+                self._backend.string_t).generate_Assign(context,node)
 cypy.intern(ConstrainedString)
 
   

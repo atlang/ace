@@ -27,13 +27,12 @@ class Pattern:
         return left_nfa.included_in(right_nfa)
     
     def at(self, n):
-        """ returns a new Pattern defining the nth character of this pattern. """
+        """ returns an | containing all possible characters at position n """
         nfa = NFA.parse(self.get_regex())
         return nfa.pattern_of_char_at(n)
     
     def __eq__(self, other):
-        """ Using a set theoretic definition -- equivalence is bidirectional inclusion. 
-            FA isos would be faster? """
+        """ Equivalence is bidirectional inclusion. """ 
         return self.included_in(right) and right.included_in(self)
 
     def get_regex(self):
@@ -66,7 +65,8 @@ class RegexParser:
         self.sym_Escape         = "\\"
          
     def parse(self, pattern):
-        """ base case. ? and + are interpreted as combinations of sequences, alternatives and *s. """
+        """ base case. 
+            ? and + are represented using | and *. """
         
         if len(pattern) == 0:
             return Empty()
@@ -97,7 +97,8 @@ class RegexParser:
         elif c == self.sym_WildCard:
             return self._parse(WildCard(), pattern[1:])
         
-        elif c == self.sym_Alternative or c == self.sym_AtLeastOne or c == self.sym_Kleene or c == self.sym_NoMoreThanOne:
+        elif c == self.sym_Alternative or c == self.sym_AtLeastOne or  \
+        c == self.sym_Kleene or c == self.sym_NoMoreThanOne:
             raise ParserException("Invalid beginning token: %s" % (c))
         
         elif c == self.sym_Escape:
@@ -111,15 +112,18 @@ class RegexParser:
         if len(remaining) == 0:
             return regex
 
-        c = remaining[0] #remaining = portion of the initial pattern that hasn't been matched.
+        #remaining = portion of the initial pattern that hasn't been matched.
+        c = remaining[0] 
         if c == self.sym_Alternative:
             return Alternative(regex, self.parse(remaining[1:]))
         
         elif c == self.sym_AtLeastOne:
             if isinstance(regex,Combination) and not regex.atomized:
-                regex.right = Sequence(Repetition(regex.right), regex.right) #bind * before seq
+                #bind * before seq
+                regex.right = Sequence(Repetition(regex.right), regex.right) 
             else:
-                regex = Sequence(Repetition(regex), regex) #reptetition must come first.
+                #reptetition must come first.
+                regex = Sequence(Repetition(regex), regex) 
             regex.atomized = True
             
             if len(remaining) > 1:
@@ -130,7 +134,8 @@ class RegexParser:
         
         elif c == self.sym_Kleene:
             if isinstance(regex,Combination) and not regex.atomized:
-                regex.right = Repetition(regex.right) #bind * before seq
+                #bind * before seq
+                regex.right = Repetition(regex.right) 
             else:
                 regex = Repetition(regex)
             regex.atomized = True
@@ -145,7 +150,8 @@ class RegexParser:
     
         elif c == self.sym_NoMoreThanOne:
             if isinstance(regex,Combination) and not regex.atomized:
-                regex.right = Alternative(Empty(), regex.right) #bind * before seq
+                #bind * before seq
+                regex.right = Alternative(Empty(), regex.right) 
             else:
                 regex = Alternative(Empty(), regex)
             regex.atomized = True
@@ -176,7 +182,8 @@ class RegexParser:
 class Regex:
     """ AST + Matching
         Avoided a bit of reinventing the wheel.
-        This is the equivalence test, due to http://morepypy.blogspot.com/2010/05/efficient-and-elegant-regular.html
+        This is the equivalence test, due to 
+        http://morepypy.blogspot.com/2010/05/efficient-and-elegant-regular.html
     """
     def __init__(self, empty):
         self.marked = False
@@ -316,7 +323,9 @@ class NFA:
         nfa = NFA()
         nfa.q0 = self.q0
         for q in self.q: nfa.q.append(q)
-        for t in self.transitions: nfa.add_transition(t.state, t.input, t.new_state)
+        for t in self.transitions: nfa.add_transition(t.state, 
+                                                      t.input, 
+                                                      t.new_state)
         for f in self.final_states: nfa.final_states.append(f)
         return nfa
     
@@ -394,7 +403,9 @@ class NFA:
                 nl.q.append(state + offset)
             #copy transitions
             for t in nr.transitions:
-                nl.add_transition(t.state + offset, t.input, t.new_state + offset)
+                nl.add_transition(t.state + offset, 
+                                  t.input, 
+                                  t.new_state + offset)
                             
             #remove the final states of nl and update
             #transitions to point to nr.q0 instead.
@@ -433,14 +444,20 @@ class NFA:
             for state in nr.q:
                 nl.q.append(state + offset)
             for t in nr.transitions:
-                nl.add_transition(t.state + offset, t.input, t.new_state + offset)
+                nl.add_transition(t.state + offset, 
+                                  t.input, 
+                                  t.new_state + offset)
             for f in nr.final_states:
                 nl.final_states.append(f + offset)
             
             #nl.q0 -> z => new_q0 -> z and similarly for nr.q0
             for t in nl.transitions:
-                if t.state == nl.q0: nl.add_transition(new_q0, t.input, t.new_state)
-                if t.state == nr.q0 + offset : nl.add_transition(new_q0, t.input, t.new_state)
+                if t.state == nl.q0: nl.add_transition(new_q0, 
+                                                       t.input, 
+                                                       t.new_state)
+                if t.state == nr.q0 + offset : nl.add_transition(new_q0, 
+                                                                 t.input, 
+                                                                 t.new_state)
             
             #make new_q0 the new initial
             if nl.q0 in nl.final_states or nr.q0 in nr.final_states: 
@@ -476,7 +493,8 @@ class NFA:
             return n
                         
         else:
-            raise Exception("Don't know the expression %s" % str(regex.__class__))
+            raise Exception("Don't know the expression %s" % 
+                            str(regex.__class__))
                 
     
     def prune_unreachable_states(self):
@@ -510,7 +528,7 @@ class NFA:
                     return True
 
     def get_dfa(self):
-        """ NFA -> DFA. Worst case is an exponential blowup in the number of states. """ 
+        """ NFA -> DFA. """ 
         dfa = DFA()
         state_counter = 0
         
@@ -536,8 +554,11 @@ class NFA:
             for input in sigma:
                 next_state = list()
                 for t in self.transitions:
-                    #if this transition has the right input, the state is in our current state and we haven't already added it.
-                    if t.input == input and t.state in curr_state and not t.new_state in next_state:
+                    #If the input matches, the state is valid and we haven't 
+                    #already appended this state, then append.
+                    if t.input == input and \
+                    t.state in curr_state and \
+                    not t.new_state in next_state:
                         next_state.append(t.new_state)
                 
                 if len(next_state) == 0: continue
@@ -553,7 +574,9 @@ class NFA:
                     work_stack.append(frozenset(next_state))
                 
                 
-                dfa.add_transition(nfa2dfa[curr_state], input, nfa2dfa[frozenset(next_state)])
+                dfa.add_transition(nfa2dfa[curr_state], 
+                                   input, 
+                                   nfa2dfa[frozenset(next_state)])
 
         return dfa
     
@@ -573,7 +596,9 @@ class NFA:
                 transitions_to_remove.append(t)
                 for s in sigma:
                     if s == None: continue
-                    transitions_to_add.append(TransitionFunction(t.state,s,t.new_state))
+                    transitions_to_add.append(TransitionFunction(t.state,
+                                                                 s,
+                                                                 t.new_state))
         for t in transitions_to_remove: self.transitions.remove(t)
         for t in transitions_to_add:
             self.add_transition(t.state, t.input, t.new_state)
@@ -585,8 +610,8 @@ class NFA:
         return not self.has_unshared_final_state(right, True)
     
     def has_unshared_final_state(self, right, print_graphs):
-        """ returns true iff there is a final state in self that is not a fina lstate
-            in right. """
+        """ returns ture iff self contains a final state that is not in right.
+            print_graphs is a debugging flag. """
         
         #make the alphabet
         sigma = self.alphabet()
@@ -594,10 +619,11 @@ class NFA:
             if not s in sigma and s != None: 
                 sigma.append(s)
         
-        #Add at least one char in case wildcards are the only characters involved.
+        #If wild cards are the only characters involved, then bind them.
         if len(sigma) == 0:
             sigma.append(".")
-        #And also add a character so that other characters don't gain generality?
+        #Add an special character to differentiate wildcards from regular 
+        #sequences now that wildcards are bound.
         sigma.append("SP")
         
         #bind the NFAs    
@@ -615,21 +641,39 @@ class NFA:
             self_dfa.gv_code()
             right_dfa.gv_code()
         
-        return self_dfa._has_unshared_final_state(right_dfa, self_dfa.q0, right_dfa.q0, None, None, list(), True)
+        return self_dfa._has_unshared_final_state(right_dfa, 
+                                                  self_dfa.q0, 
+                                                  right_dfa.q0, 
+                                                  None, 
+                                                  None, 
+                                                  list(), 
+                                                  True)
     
-    def _has_unshared_final_state(self, right, self_state, right_state, self_input, right_input, checked, lock_step):
-        """ Search all paths through self for a path that does not lockstep with right and
-            results in a final state.
-            self_state and right_state are corresponding states. """
+    def _has_unshared_final_state(self, right, self_state, right_state, 
+                                  self_input, right_input, checked, lock_step):
+        """ The recursion for has_unshared_final_state."
+            Searches all paths through self for a path that does not locakstep
+            with right and results in a final state.
+        """
         
         #if we found a final state on the left but not a final state in lock step on the right, 
         #then the left has an unshared state.
-        if self_state in self.final_states and ((not right_state in right.final_states) or not lock_step):
+        if self_state in self.final_states \
+        and ((not right_state in right.final_states) or not lock_step):
             return True
      
-        if frozenset([self_state, right_state, self_input, right_input, lock_step]) in checked:
+        if frozenset([self_state, 
+                      right_state, 
+                      self_input, 
+                      right_input, 
+                      lock_step]) in checked:
             return False
-        checked.append(frozenset([self_state,right_state, self_input, right_input, lock_step])) #prevent recursive loops
+        #prevent recursive loops
+        checked.append(frozenset([self_state, 
+                                  right_state, 
+                                  self_input, 
+                                  right_input, 
+                                  lock_step])) 
 
         for self_t in self.transitions:
             if self_t.state != self_state: continue
@@ -639,12 +683,24 @@ class NFA:
                 if right_t.state != right_state: continue
                 if right_t.input == self_t.input:
                     found_lockstep = True
-                    r_val = self._has_unshared_final_state(right, self_t.new_state, right_t.new_state, self_t.input, right_t.input, checked, lock_step)
+                    r_val = self._has_unshared_final_state(right, 
+                                                           self_t.new_state, 
+                                                           right_t.new_state, 
+                                                           self_t.input, 
+                                                           right_t.input, 
+                                                           checked, 
+                                                           lock_step)
                     if r_val:
                         return True    
                      
             if not found_lockstep:
-                r_val = self._has_unshared_final_state(right, self_t.new_state, right_state, self_t.input, None, checked, False)
+                r_val = self._has_unshared_final_state(right, 
+                                                       self_t.new_state, 
+                                                       right_state, 
+                                                       self_t.input, 
+                                                       None, 
+                                                       checked, 
+                                                       False)
                 if r_val:
                     return True 
         return False
@@ -665,7 +721,8 @@ class NFA:
         intersect = NFA()
         curr_state = 0 #current state
 
-        large = self if len(self.q) > len(other_nfa.q) else other_nfa # for debugging.
+        # for debugging.
+        large = self if len(self.q) > len(other_nfa.q) else other_nfa 
         small = self if len(self.q) <= len(other_nfa.q) else other_nfa
         
         cross = dict() # self X other_nfa -> intersect state
@@ -687,9 +744,11 @@ class NFA:
         #normal intersection
         for st in large.transitions:
             for ot in small.transitions:
-                if st.input == ot.input or st.input == None or ot.input == None: #wildcards
+                #wildcards
+                if st.input == ot.input or st.input == None or ot.input == None: 
                     state = cross[frozenset({st.state,ot.state + cross_offset})]
-                    new_state = cross[frozenset({st.new_state,ot.new_state + cross_offset})]
+                    new_state = cross[frozenset(
+                                    {st.new_state,ot.new_state + cross_offset})]
                     intersect.add_transition(state, st.input, new_state)
         return intersect
 

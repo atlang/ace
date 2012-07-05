@@ -284,7 +284,8 @@ class Type(clq.Type):
             context.backend._add_declaration(context, 
                 id, local_variables[id].resolve(context))
 
-        context.stmts.append((self.generate_Assign_stmt(target.code, value.code), 
+        context.stmts.append((self.generate_Assign_stmt(target.code, 
+                                                        value.code), 
                               context.end_stmt))
         context.body.append(astx.copy_node(node,
             targets=[target],

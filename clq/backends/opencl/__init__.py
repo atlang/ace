@@ -88,7 +88,7 @@ class StrType(Type):
         return s
     
     def is_subtype(self, candidate_type):
-        """ In addition to reflection, StrType is the top type for the ConstrainedString relation. """
+        """ Reflection and Constrained String Top rules. """
         if isinstance(candidate_type, cstrings.ConstrainedString):
             return True
         else:
@@ -96,7 +96,9 @@ class StrType(Type):
     
     def resolve_BinOp(self,context,node):
         if not isinstance(node.op, _ast.Add):
-            raise clq.TypeResolutionError("Operation %s is not supported on Strings" % str(node.op), node)
+            raise clq.TypeResolutionError(
+                                "Operation %s is not supported on Strings" % 
+                                str(node.op), node)
         right_type = node.right.unresolved_type.resolve(context)
         
         try:

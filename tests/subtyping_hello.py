@@ -52,8 +52,9 @@ assert test2.return_type == L1
 
 
 
-## Note: rhs + lhs for Language types has type Language<(rhs._regex)(lhs._regex)> and requires rhs <: lhs 
-## The subtyping requirement is somewhat arbitrary.
+# Note: rhs + lhs for Language types has type 
+# Language<(rhs._regex)(lhs._regex)> and requires rhs <: lhs 
+# The subtyping requirement is somewhat arbitrary.
 
 #TEST: Return type of concatenation
 sub = lang.ConstrainedString(OpenCL, ".")
@@ -84,7 +85,10 @@ assert assign_to_sub.return_type == super_type
 @clq.fn
 def return_super(a, b, return_sub):
     return return_sub(b) + a
-return_super = return_super.compile(OpenCL, super_type, sub_type, return_sub.cl_type)
+return_super = return_super.compile(OpenCL, 
+                                    super_type, 
+                                    sub_type, 
+                                    return_sub.cl_type)
 assert return_super.return_type == lang.ConstrainedString(OpenCL, "aa+")
 
 # The example below fails because the lhs must be a subtype of the rhs.
@@ -145,7 +149,8 @@ assert bottomcast.return_type == ocl.string
 #    return a
 #try:
 #    assign_if = assign.compile(OpenCL, super_type, return_sub.cl_type)
-#    assign_if.return_type #should result in an error; assigning a supertype to a subtype.
+#    #should result in an error; assigning a supertype to a subtype.
+#    assign_if.return_type 
 #    assert False
 #    #assert ocl.float.is_subtype(ocl.int)
 #except clq.TypeResolutionError:
