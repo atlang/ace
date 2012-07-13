@@ -3,31 +3,32 @@ from itertools import *
 import copy
 
 class Pattern:
-    """ Regular Expressions used to specify grammar types. 
-        Symbols follow (strongest to weakest binding):
-            () - grouping
+    """Regular Expressions used to specify grammar types. 
 
-            . - single wild card
+    Symbols follow (strongest to weakest binding):
+        () - grouping
 
-              - concatenation
+        . - single wild card
 
-            * - Kleene Operator
-            + - shorthand; a+ = a(a*)
-            ? - 0 or 1
-            
+          - concatenation
+
+        * - Kleene Operator
+        + - shorthand; a+ = a(a*)
+        ? - 0 or 1
+        
             | - alternative
     """
     def __init__(self, pattern):
         self.pattern = pattern
 
     def included_in(self, right):
-        """ returns true iff self is a sublanguage of right. """
+        """Returns true iff self is a sublanguage of right. """
         left_nfa = NFA.parse(self.get_regex())
         right_nfa = NFA.parse(right.get_regex())
         return left_nfa.included_in(right_nfa)
     
     def at(self, n):
-        """ returns an | containing all possible characters at position n """
+        """Returns an | containing all possible characters at position n """
         nfa = NFA.parse(self.get_regex())
         return nfa.pattern_of_char_at(n)
     
@@ -36,12 +37,12 @@ class Pattern:
         return self.included_in(right) and right.included_in(self)
 
     def get_regex(self):
-        """ Gets a regular expression AST from the pattern """
+        """Gets a regular expression AST from the pattern """
         regex = RegexParser().parse(self.pattern)
         return regex
 
     def match(self, string):
-        """ Normal pattern matching """
+        """Normal pattern matching """
         regex = self.get_regex()
         return regex.match(regex,string)
 
@@ -53,7 +54,7 @@ class ParserException(Exception):
         Exception.__init__(self,msg)
 
 class RegexParser:
-    """ Regex -> AST """
+    """Regex -> AST"""
     def __init__(self):
         self.sym_WildCard       = "."
         self.sym_LP             = "("
@@ -65,8 +66,10 @@ class RegexParser:
         self.sym_Escape         = "\\"
          
     def parse(self, pattern):
-        """ base case. 
-            ? and + are represented using | and *. """
+        """base case. 
+        
+        ? and + are represented using | and *.
+        """
         
         if len(pattern) == 0:
             return Empty()
@@ -108,7 +111,7 @@ class RegexParser:
             return self._parse(Character(pattern[0]), pattern[1:])             
                 
     def _parse(self, regex, remaining):
-        """ Recurrence """
+        """Recurrence"""
         if len(remaining) == 0:
             return regex
 
@@ -180,10 +183,11 @@ class RegexParser:
             
 # AST + matching
 class Regex:
-    """ AST + Matching
-        Avoided a bit of reinventing the wheel.
-        This is the equivalence test, due to 
-        http://morepypy.blogspot.com/2010/05/efficient-and-elegant-regular.html
+    """AST + Matching
+    
+    Avoided a bit of reinventing the wheel.
+    This is the equivalence test, due to 
+    http://morepypy.blogspot.com/2010/05/efficient-and-elegant-regular.html
     """
     def __init__(self, empty):
         self.marked = False
@@ -283,14 +287,14 @@ class Sequence(Combination):
 #                      Inclusion                      #
 #######################################################
 class TransitionFunction:
-    """  {state,input} -> new_state """
+    """ {state,input} -> new_state"""
     def __init__(self, state, input, new_state):
         self.state = state
         self.input = input
         self.new_state = new_state
     
 class NFA:
-    """ NFA, regex AST -> NFA, NFA -> DFA """
+    """NFA, regex AST -> NFA, NFA -> DFA"""
     def __init__(self):
         self.q0 = None              # start state
         self.q      = list()        # states (Q)
@@ -373,7 +377,7 @@ class NFA:
     
     @classmethod
     def parse(cls, regex):
-        """ regex AST -> NFA """
+        """regex AST -> NFA"""
         if isinstance(regex,Character):
             n = NFA()
             n.q0 = 0
@@ -498,7 +502,7 @@ class NFA:
                 
     
     def prune_unreachable_states(self):
-        """ removes unreachable states from this NFA """
+        """Removes unreachable states from this NFA"""
         to_remove = list()
         for s in self.q:
             if not self._reachable_from(self.q0, s, list()):
@@ -514,7 +518,7 @@ class NFA:
 
             
     def _reachable_from(self, curr_state, target_state, visited):
-        """ returns true iff target_state is reachable from curr_state """
+        """Returns true iff target_state is reachable from curr_state"""
         if curr_state == target_state: return True #q0 and loops
         
         if curr_state in visited: return False #prevent infinite recursion on loops
@@ -528,7 +532,7 @@ class NFA:
                     return True
 
     def get_dfa(self):
-        """ NFA -> DFA. """ 
+        """NFA -> DFA.""" 
         dfa = DFA()
         state_counter = 0
         
@@ -581,7 +585,7 @@ class NFA:
         return dfa
     
     def alphabet(self):
-        """ A list of all non-wildcard input symbols for this FA """
+        """A list of all non-wildcard input symbols for this FA"""
         sigma = list()
         for t in self.transitions:
             if t.input == None: continue
@@ -609,9 +613,12 @@ class NFA:
     def included_in_print(self, right):
         return not self.has_unshared_final_state(right, True)
     
-    def has_unshared_final_state(self, right, print_graphs):
-        """ returns ture iff self contains a final state that is not in right.
-            print_graphs is a debugging flag. """
+    def has_unshared_final_state(self, right, print_graphs=False):
+        """Returns ture iff self contains a final state that is not in right.
+        
+        print_graphs is a debugging flag. Setting to True will print out Dot 
+        source code for GraphViz graphs, which can be very useful when debugging
+        """
         
         #make the alphabet
         sigma = self.alphabet()
@@ -651,9 +658,10 @@ class NFA:
     
     def _has_unshared_final_state(self, right, self_state, right_state, 
                                   self_input, right_input, checked, lock_step):
-        """ The recursion for has_unshared_final_state."
-            Searches all paths through self for a path that does not locakstep
-            with right and results in a final state.
+        """The recursion for has_unshared_final_state.
+        
+        Searches all paths through self for a path that does not locakstep
+        with right and results in a final state.
         """
         
         #if we found a final state on the left but not a final state in lock step on the right, 
@@ -706,7 +714,7 @@ class NFA:
         return False
 
     def get_complement(self):
-        """ returns the complement of self. """
+        """Returns the complement of self."""
         ret_val = DFA()
         ret_val.q = self.q
         ret_val.q0 = self.q0
@@ -716,8 +724,10 @@ class NFA:
         return ret_val
     
     def get_intersect(self, other_nfa):
-        """ returns an NFA representing the intersection of self and other_nfa.
-            Creates every pair of states; transitions are defined piecewise """
+        """Returns an NFA representing the intersection of self and other_nfa.
+        
+        Creates every pair of states; transitions are defined piecewise 
+        """
         intersect = NFA()
         curr_state = 0 #current state
 

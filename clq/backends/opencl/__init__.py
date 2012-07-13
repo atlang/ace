@@ -88,7 +88,7 @@ class StrType(Type):
         return s
     
     def is_subtype(self, candidate_type):
-        """ Reflection and Constrained String Top rules. """
+        """Implements subtype reflection and Constrained String Top rules."""
         if isinstance(candidate_type, cstrings.ConstrainedString):
             return True
         else:
@@ -368,13 +368,15 @@ class Backend(base_c.Backend):
         return StrType
 
     def check_ConstrainedString_cast(self,context,node):
-        """ Generates code for downcasts to ConstrainedString types.
+        """Generates code for downcasts to ConstrainedString types.
         
-            Dynamic checking for downcasts to ConstrainedStrings is 
-            not supported by the openCL backend because no regex library
-            exists. 
+        Dynamic checking for downcasts to ConstrainedStrings is 
+        not supported by the openCL backend because no regex library
+        exists. 
         """
-        pass
+        raise clq.CodeGenerationError("Checking for constrained string " +
+                        "downcasting unimplemented for the OpenCL bakcend.",
+                        None)
     
     void_t = void
     int_t = int

@@ -228,16 +228,24 @@ class Type(object):
         return str(self)
     
     def is_subtype(self, candidate_subtype):
-        """ Returns true if candidate_subtype is a subtype of self (candidate <: self). For example,
-            if A <: B and !(B <: A) then B.is_subtype(A) == True but A.is_subtype(B) == False. 
-            The default behavior for this rule implements reflection for subtyping (A <: A). 
+        """Returns true if candidate_subtype is a subtype of self 
+        
+        Or, is_subtype -> True iff candidate <: self. 
+        For example, if A <: B and !(B <: A) then: 
+        B.is_subtype(A) == True
+        A.is_subtype(B) == False
+        The default behavior for this rule implements reflection for subtyping (A <: A). 
         """
         return self == candidate_subtype
     
     def coerce(self, supertype):
-        """ The coercion function on the derivation of the rule with the 
-            conclusion class <: supertype. Should return a type equiv to supertype or None if no
-            coercion exists. """
+        """Defines the coercion function on the derivation of a rule.
+        
+        Defines the coercion function on the derivation of the rule with the 
+        conclusion class <: supertype. 
+        This method should return a type equiv to supertype or None if no
+        coercion exists. 
+        """
         if self == supertype:
             return self
         else:
@@ -396,11 +404,11 @@ class Type(object):
             self.name, node.target.value)
 
     def generate_check(self, context, node):
-        """ generate code for checking a cast """
+        """Generates code for checking a cast."""
         raise CodeGenerationError("Type does not support runtime cast checks", node)
         
-    def resolve_Ascribe(self, context, node):
-        """ Ascription using ascribe() """
+    def resolve_Cast(self, context, node):
+        """Casting using cast()."""
         term = node.args[0]
         type = node.args[1]
         
@@ -409,8 +417,8 @@ class Type(object):
         
         return type_type
     
-    def generate_Ascribe(self, context, node):
-        """ should insert runtime checks on downcasts. """
+    def generate_Cast(self, context, node):
+        """Inserts runtime checks on downcasts."""
         #casting term to type.
         term = node.args[0].unresolved_type.resolve(context)
         type = node.args[1].unresolved_type.resolve(context)
@@ -422,8 +430,6 @@ class Type(object):
         
         return retval
 
-    
-    """ Type of ascription opertors """
     def resolve_Call(self, context, node):
         raise TypeResolutionError("Could not resolve that call.", node.func)
     
@@ -433,12 +439,12 @@ class Type(object):
                                   self.name, node.func)
 
 
-class AscribeType(Type):
+class CastType(Type):
     def resolve_Call(self,context,node):
-        return self.resolve_Ascribe(context, node)
+        return self.resolve_Cast(context, node)
     
     def generate_Call(self,context,node):
-        return self.generate_Ascribe(context,node)
+        return self.generate_Cast(context,node)
         
         
 class VirtualType(Type):
@@ -503,7 +509,7 @@ class ConcreteFnType(VirtualType):
         return concrete_fn.return_type
     
     def generate_Call(self, context, node):
-        """ Appllies coercion semantics and then generates code. """
+        """Appllies coercion semantics and then generates code."""
         #These are the arg types we should coerce to
         expected_arg_types = self.concrete_fn._arg_types
         

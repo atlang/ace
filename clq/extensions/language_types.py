@@ -5,7 +5,7 @@ import clq.extensions.regex as regex
 import ast as _ast
 
 class ConstrainedString(clq.Type):
-    """" Regular expression types. """        
+    """"Regular expression types."""        
 
     def __init__(self, backend, regex):
         self._backend = backend

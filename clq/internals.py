@@ -682,8 +682,8 @@ class NameURT(UnresolvedType):
         
         
         # handle special cases
-        if id == "ascribe":
-            return clq.AscribeType("")
+        if id == "cast":
+            return clq.CastType("")
         
         # handle non-special cases
         try:
