@@ -5,6 +5,7 @@ import cypy.astx as astx
 import clq
 from clq import TypeResolutionError
 import clq.backends.base_c as base_c
+import clq.extensions.language_types as cstrings
 
 _globals = globals() # used to create lists of types below
 
@@ -76,6 +77,60 @@ class BoolType(base_c.BoolType, Type):
         return ConstantPtrType(self)
 
 bool = BoolType()
+
+#===============================================================================
+# Strings
+#===============================================================================
+class StrType(Type):
+    @classmethod
+    def _make_type(cls, name):
+        s = StrType(name)
+        return s
+    
+    def is_subtype(self, candidate_type):
+        """Implements subtype reflection and Constrained String Top rules."""
+        if isinstance(candidate_type, cstrings.ConstrainedString):
+            return True
+        else:
+            return candidate_type == StrType
+    
+    def resolve_BinOp(self,context,node):
+        if not isinstance(node.op, _ast.Add):
+            raise clq.TypeResolutionError(
+                                "Operation %s is not supported on Strings" % 
+                                str(node.op), node)
+        right_type = node.right.unresolved_type.resolve(context)
+        
+        try:
+            return self._resolve_BinOp(node.op, right_type, context.backend)
+        except TypeResolutionError as e:
+            if e.node is None:
+                e.node = node
+            raise e
+    
+    def _resolve_BinOp(self,op,right_type,backend):
+        if(isinstance(right_type, StrType)):
+            return StrType
+        else:
+            raise clq.TypeResolutionError("Must be a string",node)
+    
+    def generate_BinOp(self, context, node):
+        left = context.visit(node.left)
+        op = context.visit(node.op)
+        right = context.visit(node.right)
+        
+        code = ("strcat" , "(", left.code, "," , right.code, ")")
+        
+        return astx.copy_node(node,
+            left=left,
+            op=op,
+            right=right,
+            
+            code=code
+        )
+    
+
+string = StrType._make_type('char*') # TODO: char.private_ptr
 
 #===============================================================================
 # Integers
@@ -308,13 +363,34 @@ def t(name):
 class Backend(base_c.Backend):   
     def __init__(self):
         base_c.Backend.__init__(self, "OpenCL")
+        
+    def string_type(self):
+        return StrType
 
+    def check_ConstrainedString_cast(self,context,node):
+        """Generates code for downcasts to ConstrainedString types.
+        
+        Dynamic checking for downcasts to ConstrainedStrings is 
+        not supported by the openCL backend because no regex library
+        exists. 
+        """
+        term = node.args[0].unresolved_type.resolve(context)
+        type = node.args[1].unresolved_type.resolve(context)
+        
+        if not type.is_subtype(term):
+            raise clq.CodeGenerationError("Checking for constrained string " +
+                            "downcasting unimplemented for the OpenCL bakcend.",
+                            None)
+        else:
+            code = "(%s)%s" % (self.string_t.name, node.args[0].id)
+            return astx.copy_node(node,   code=code)
+    
     void_t = void
     int_t = int
     uint_t = uint
     float_t = float
     bool_t = bool
-    string_t = None # TODO: char.private_ptr
+    string_t = string
 
 #############################################################################
 ## OpenCL Extension descriptors

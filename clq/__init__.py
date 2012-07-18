@@ -142,7 +142,7 @@ class GenericFn(object):
     def cl_type(self):
         return self.Type(self)
 cypy.intern(GenericFn)
-
+        
 class ConcreteFn(object):
     """A concrete function is made from a generic function by binding the 
     arguments to concrete types.
@@ -227,6 +227,30 @@ class Type(object):
     def __repr__(self):
         return str(self)
     
+    def is_subtype(self, candidate_subtype):
+        """Returns true if candidate_subtype is a subtype of self 
+        
+        Or, is_subtype -> True iff candidate <: self. 
+        For example, if A <: B and !(B <: A) then: 
+        B.is_subtype(A) == True
+        A.is_subtype(B) == False
+        The default behavior for this rule implements reflection for subtyping (A <: A). 
+        """
+        return self == candidate_subtype
+    
+    def coerce(self, supertype):
+        """Defines the coercion function on the derivation of a rule.
+        
+        Defines the coercion function on the derivation of the rule with the 
+        conclusion class <: supertype. 
+        This method should return a type equiv to supertype or None if no
+        coercion exists. 
+        """
+        if self == supertype:
+            return self
+        else:
+            return None
+    
     def observe(self, context, node):
         """Called when this type has been assigned to an expression, given by 
         ``node``."""
@@ -310,7 +334,7 @@ class Type(object):
     def generate_Return(self, context, node):
         raise CodeGenerationError(
             "Type '%s' does not support the 'return' statement." % 
-            self.name, node.func)
+            self.name, node)
         
     def resolve_MultipleAssignment(self, context, prev, new, node):
         new_type = new.resolve(context)
@@ -378,7 +402,45 @@ class Type(object):
         raise CodeGenerationError(
             "Type '%s' does not support augmented assignment to a subscript." % 
             self.name, node.target.value)
-            
+
+    def generate_cast(self, context, node):
+        """Generates code for checking a cast."""
+        raise CodeGenerationError("Type does not support runtime cast checks", 
+                                  node)
+        
+    def resolve_Cast(self,context,node):
+        raise CodeGenerationError(
+            "Type '%s' does not support augmented assignment to a subscript." % 
+            self.name, node.target.value)
+
+    def generate_Cast(self,context,node):
+        """Generates code for checking a cast."""
+        raise CodeGenerationError("Type does not support runtime cast checks", 
+                                  node)
+
+    def resolve_Call(self, context, node):
+        raise TypeResolutionError("Could not resolve that call.", node.func)
+    
+    def generate_Call(self, context, node):
+        raise CodeGenerationError(
+                                  "Type '%s' does not support the call operation." % 
+                                  self.name, node.func)
+
+
+class CastType(Type):
+    """Implements the dispatch protocol for the cast function.
+    
+    Calling cast(v,new_type) in Ace casts v to new_type. The value (v)
+    is responisble for implementing downcast checks, and also defining what 
+    casts are valid. 
+    """
+    def resolve_Call(self,context,node):
+        return self.resolve_Cast(context, node)
+    
+    def generate_Call(self,context,node):
+        return self.generate_Cast(context,node)
+        
+        
 class VirtualType(Type):
     """Designates a type that does not have a concrete representation (e.g. 
     singleton function types)."""
@@ -419,26 +481,92 @@ class GenericFnType(VirtualType):
 cypy.intern(GenericFnType)
 GenericFn.Type = GenericFnType
 
+class CastFnType(CastType):
+    """A cast function"""
+    def __init__(self, name):
+        CastType.__init__(self,name)
+        
+    def resolve_Cast(self, context, node):
+        """Casting using cast()."""
+        term = node.args[0]
+        type = node.args[1]
+        
+        term_type = term.unresolved_type.resolve(context)
+        type_type = type.unresolved_type.resolve(context)
+        
+        return type_type
+    
+    def generate_Cast(self, context, node):
+        """Inserts runtime checks on downcasts."""
+        #casting term to type.
+        term = node.args[0].unresolved_type.resolve(context)
+        type = node.args[1].unresolved_type.resolve(context)
+        
+        retval = term.generate_cast(context,node)
+        return context.visitor.visit(node.args[0]) if retval == None else retval
+cypy.intern(CastFnType)
+CastFnType.Type = CastFnType
+
+
+        
+        
 class ConcreteFnType(VirtualType):
     """Each concrete function uniquely inhabits a ConcreteFnType."""
     def __init__(self, concrete_fn):
         VirtualType.__init__(self, concrete_fn.name)
         self.concrete_fn = concrete_fn
-        
+
     def resolve_Call(self, context, node):
         arg_types = tuple(arg.unresolved_type.resolve(context)
                           for arg in node.args)
         concrete_fn = self.concrete_fn
         fn_arg_types = concrete_fn.arg_types
-        if arg_types != fn_arg_types:
-            raise TypeResolutionError(
-                "Argument types are not compatible. Got %s, expected %s." %
-                (str(arg_types), str(fn_arg_types)), node)
-        
+
+        #Ensure that each type is a subtype of the expected type.
+        for arg,arg_type in zip(arg_types, fn_arg_types):
+            if not arg.is_subtype(arg_type): #S <: S
+                raise TypeResolutionError(
+                    "Argument types are not compatible. Got %s, expected %s." %
+                    (str(arg), str(arg_type)), node)
+
         return concrete_fn.return_type
     
     def generate_Call(self, context, node):
-        return _generic_generate_Call(context, node)    
+        """Appllies coercion semantics and then generates code."""
+        #These are the arg types we should coerce to
+        expected_arg_types = self.concrete_fn._arg_types
+        
+        #These are the arg types we really have.
+        arg_types = list()
+        for i in range(len(node.args)):
+            #Get the actual argument type for this argument
+            arg_type = node.args[i].unresolved_type.resolve(context)
+            
+            #Do coercion if necessary.
+            arg_type = arg_type.coerce(expected_arg_types[i])
+            if arg_type == None:
+                raise TypeResolutionError("Couldn't coerce types",node)
+            
+            #add to the arg_types list.
+            arg_types.append(arg_type)
+        
+        #visit the arguments
+        args = list()
+        for arg,arg_type in zip(node.args,arg_types):
+            if isinstance(arg_type, VirtualType):
+                continue
+            args.append(context.visit(arg))
+            
+        func = context.visit(node.func)
+        
+        code = (func.code, "(",
+                cypy.join((arg.code for arg in args), ", "),
+                ")")
+        
+        return astx.copy_node(node,
+            args=args,
+            func=func,
+            code=code)  
 cypy.intern(ConcreteFnType)
 ConcreteFn.Type = ConcreteFnType
 
@@ -446,7 +574,7 @@ class Backend(object):
     """Abstract base class for a backend language specification."""
     def __init__(self, name):
         self.name = name
-        
+                
     def init_context(self, context):
         """Initializes a :class:`context <Context>`."""
         pass
@@ -519,6 +647,11 @@ class Backend(object):
     def generate_op(self, context, node):
         raise CodeGenerationError(
             "Backend does not support operators.", node)
+    
+    ## Defined interfaces for extensions
+    def string_type(self):
+        raise Error("This backend does not support string types")
+    string_t = None
 
 class Context(object):
     """Contains contextual information that is used during type resolution 
