@@ -110,14 +110,11 @@ def upcast(a,b):
 upcast = upcast.compile(OpenCL, sub_type, super_type)
 assert upcast.return_type == super_type
 
-@clq.fn
-def downcast(a,b):
-    return cast(a,b)
-downcast = downcast.compile(OpenCL, super_type, sub_type)
-try:
-    assert downcast.return_type == sub_type
-except clq.CodeGenerationError as e:
-    assert True # Unimplemented.
+#@clq.fn
+#def downcast(a,b):
+#    return cast(a,b)
+#downcast = downcast.compile(OpenCL, super_type, sub_type)
+#assert downcast.return_type == sub_type
 
 @clq.fn
 def impossiblecast(a,b):
@@ -131,14 +128,11 @@ except clq.CodeGenerationError as e:
 
 
 #this is always a downcast, so there should always be a check.
-@clq.fn
-def topcast(a):
-    return cast("some user input",a)
-topcast = topcast.compile(OpenCL, super_type)
-try:
-    assert topcast.return_type == super_type
-except clq.CodeGenerationError as e:
-    assert True # unimplemented.
+#@clq.fn
+#def topcast(a):
+#    return cast("some user input",a)
+#topcast = topcast.compile(OpenCL, super_type)
+#assert topcast.return_type == super_type
 
 #print topcast.program_item.code
 

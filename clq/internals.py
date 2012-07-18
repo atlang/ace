@@ -680,10 +680,9 @@ class NameURT(UnresolvedType):
         node = self.node
         id = node.id
         
-        
         # handle special cases
         if id == "cast":
-            return clq.CastType("")
+            return clq.CastFnType(id)
         
         # handle non-special cases
         try:

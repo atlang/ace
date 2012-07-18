@@ -84,10 +84,10 @@ class ConstrainedString(clq.Type):
         else:
             return None
     
-    def generate_check(self, context, node):
+    def generate_cast(self, context, node):
         term = node.args[0].unresolved_type.resolve(context)
         type = node.args[1].unresolved_type.resolve(context)
-        self._backend.check_ConstrainedString_cast(context,node)
+        return self._backend.check_ConstrainedString_cast(context,node)
     
     def generate_BinOp(self,context,node):
         return self._backend.string_type()(

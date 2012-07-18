@@ -142,7 +142,7 @@ class GenericFn(object):
     def cl_type(self):
         return self.Type(self)
 cypy.intern(GenericFn)
-
+        
 class ConcreteFn(object):
     """A concrete function is made from a generic function by binding the 
     arguments to concrete types.
@@ -403,32 +403,20 @@ class Type(object):
             "Type '%s' does not support augmented assignment to a subscript." % 
             self.name, node.target.value)
 
-    def generate_check(self, context, node):
+    def generate_cast(self, context, node):
         """Generates code for checking a cast."""
-        raise CodeGenerationError("Type does not support runtime cast checks", node)
+        raise CodeGenerationError("Type does not support runtime cast checks", 
+                                  node)
         
-    def resolve_Cast(self, context, node):
-        """Casting using cast()."""
-        term = node.args[0]
-        type = node.args[1]
-        
-        term_type = term.unresolved_type.resolve(context)
-        type_type = type.unresolved_type.resolve(context)
-        
-        return type_type
-    
-    def generate_Cast(self, context, node):
-        """Inserts runtime checks on downcasts."""
-        #casting term to type.
-        term = node.args[0].unresolved_type.resolve(context)
-        type = node.args[1].unresolved_type.resolve(context)
+    def resolve_Cast(self,context,node):
+        raise CodeGenerationError(
+            "Type '%s' does not support augmented assignment to a subscript." % 
+            self.name, node.target.value)
 
-        if not type.is_subtype(term):
-            type.generate_check(context,node)
-        
-        retval = context.visitor.visit(node.args[0])
-        
-        return retval
+    def generate_Cast(self,context,node):
+        """Generates code for checking a cast."""
+        raise CodeGenerationError("Type does not support runtime cast checks", 
+                                  node)
 
     def resolve_Call(self, context, node):
         raise TypeResolutionError("Could not resolve that call.", node.func)
@@ -440,6 +428,12 @@ class Type(object):
 
 
 class CastType(Type):
+    """Implements the dispatch protocol for the cast function.
+    
+    Calling cast(v,new_type) in Ace casts v to new_type. The value (v)
+    is responisble for implementing downcast checks, and also defining what 
+    casts are valid. 
+    """
     def resolve_Call(self,context,node):
         return self.resolve_Cast(context, node)
     
@@ -487,6 +481,35 @@ class GenericFnType(VirtualType):
 cypy.intern(GenericFnType)
 GenericFn.Type = GenericFnType
 
+class CastFnType(CastType):
+    """A cast function"""
+    def __init__(self, name):
+        CastType.__init__(self,name)
+        
+    def resolve_Cast(self, context, node):
+        """Casting using cast()."""
+        term = node.args[0]
+        type = node.args[1]
+        
+        term_type = term.unresolved_type.resolve(context)
+        type_type = type.unresolved_type.resolve(context)
+        
+        return type_type
+    
+    def generate_Cast(self, context, node):
+        """Inserts runtime checks on downcasts."""
+        #casting term to type.
+        term = node.args[0].unresolved_type.resolve(context)
+        type = node.args[1].unresolved_type.resolve(context)
+        
+        retval = term.generate_cast(context,node)
+        return context.visitor.visit(node.args[0]) if retval == None else retval
+cypy.intern(CastFnType)
+CastFnType.Type = CastFnType
+
+
+        
+        
 class ConcreteFnType(VirtualType):
     """Each concrete function uniquely inhabits a ConcreteFnType."""
     def __init__(self, concrete_fn):

@@ -374,9 +374,16 @@ class Backend(base_c.Backend):
         not supported by the openCL backend because no regex library
         exists. 
         """
-        raise clq.CodeGenerationError("Checking for constrained string " +
-                        "downcasting unimplemented for the OpenCL bakcend.",
-                        None)
+        term = node.args[0].unresolved_type.resolve(context)
+        type = node.args[1].unresolved_type.resolve(context)
+        
+        if not type.is_subtype(term):
+            raise clq.CodeGenerationError("Checking for constrained string " +
+                            "downcasting unimplemented for the OpenCL bakcend.",
+                            None)
+        else:
+            code = "(%s)%s" % (self.string_t.name, node.args[0].id)
+            return astx.copy_node(node,   code=code)
     
     void_t = void
     int_t = int
