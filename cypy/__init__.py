@@ -548,6 +548,18 @@ bool_vals = (True, False)
 """(True, False)"""
 
 ##############################################################################
+## Sequences
+##############################################################################
+def prepend(list, item):
+    """Adds the provided item to the front of the list.""" 
+    list.insert(0, item)
+    
+def extend_front(list, items):
+    """Adds the provided items to the front of the list."""
+    for item in reversed(items):
+        prepend(list, item)
+        
+##############################################################################
 ## Numbers
 ##############################################################################
 inf = float('inf')
@@ -1790,6 +1802,30 @@ class stack(list):
     
     def __iter__(self):
         return reversed(self)
+    
+class SetList(list):
+    """A list where each element appears only once, in the position it was 
+    originally inserted."""
+    def __new__(cls, *args, **kwargs):
+        obj = list.__new__(cls)
+        list.__init__(obj, *args, **kwargs)
+        return obj
+    
+    def __init__(self, *args, **kwargs):
+        # covered in __new__
+        pass
+    
+    def append(self, x):
+        if x not in self:
+            super(SetList, self).append(x)
+        
+    def extend(self, L):
+        for item in L:
+            self.append(item)
+            
+    def insert(self, i, x):
+        if x not in self:
+            super(SetList, self).insert(i, x)
         
 class stack_lookup(object):
     """Looks up keys from a stack of dictionaries.
@@ -1840,6 +1876,95 @@ class stack_lookup(object):
     def pop(self):
         """Convenience method for popping a dictionary from the stack."""
         return self.dict_stack.pop()
+
+# Copyright (C) 2009 Raymond Hettinger
+
+#                          *** MIT License ***
+# Permission is hereby granted, free of charge, to any person obtaining a copy of
+# this software and associated documentation files (the "Software"), to deal in
+# the Software without restriction, including without limitation the rights to
+# use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+# of the Software, and to permit persons to whom the Software is furnished to do
+# so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+## {{{ http://code.activestate.com/recipes/576694/ (r7)
+import collections
+
+KEY, PREV, NEXT = range(3)
+
+class OrderedSet(collections.MutableSet):
+
+    def __init__(self, iterable=None):
+        self.end = end = [] 
+        end += [None, end, end]         # sentinel node for doubly linked list
+        self.map = {}                   # key --> [key, prev, next]
+        if iterable is not None:
+            self |= iterable
+
+    def __len__(self):
+        return len(self.map)
+
+    def __contains__(self, key):
+        return key in self.map
+
+    def add(self, key):
+        if key not in self.map:
+            end = self.end
+            curr = end[PREV]
+            curr[NEXT] = end[PREV] = self.map[key] = [key, curr, end]
+
+    def discard(self, key):
+        if key in self.map:        
+            key, prev, next = self.map.pop(key)
+            prev[NEXT] = next
+            next[PREV] = prev
+
+    def __iter__(self):
+        end = self.end
+        curr = end[NEXT]
+        while curr is not end:
+            yield curr[KEY]
+            curr = curr[NEXT]
+
+    def __reversed__(self):
+        end = self.end
+        curr = end[PREV]
+        while curr is not end:
+            yield curr[KEY]
+            curr = curr[PREV]
+
+    def pop(self, last=True):
+        # changed default to last=False - by default, treat as queue.
+        if not self:
+            raise KeyError('set is empty')
+        key = next(reversed(self)) if last else next(iter(self))
+        self.discard(key)
+        return key
+
+    def __repr__(self):
+        if not self:
+            return '%s()' % (self.__class__.__name__,)
+        return '%s(%r)' % (self.__class__.__name__, list(self))
+
+    def __eq__(self, other):
+        if isinstance(other, OrderedSet):
+            return len(self) == len(other) and list(self) == list(other)
+        return set(self) == set(other)
+
+    def __del__(self):
+        self.clear()                    # remove circular references
+# END {{{ http://code.activestate.com/recipes/576694/ (r7)
 
 from collections import MutableMapping
 
