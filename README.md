@@ -2,6 +2,10 @@
 
 Ace is a programming language with a modularly extensible static type system. It borrows Python's syntax directly and uses Python as a  compile-time metalanguage. That is, to put it more simply, Ace is embedded within Python.
 
+Ace is still under development. If you'd like to help, get in touch with Cyrus (see below). If you'd like to be informed when Ace is more ready for you, join the ace-announce mailing list:
+
+https://groups.google.com/forum/?fromgroups#!forum/ace-announce-l
+
 # Extensions
 ## Ace.OpenCL
 
