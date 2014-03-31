@@ -1,0 +1,30 @@
+/Users/cyrus/Dropbox/Class/ML/project/data/axion
+/Users/cyrus/Dropbox/Class/ML/project/projects/axion
+
+corpus_fmt = "/Users/cyrus/Dropbox/Class/ML/project/data/batik/corpus%d.txt"
+test_fmt = "/Users/cyrus/Dropbox/Class/ML/project/data/aoi/test%d.txt"
+
+for i in xrange(10):
+	import ngram; ngram.process_flavio_data("/Users/cyrus/Dropbox/Class/ML/project/data/batik/data.tokens%d" % i, "/Users/cyrus/Dropbox/Class/ML/project/projects/batik/", "/Users/cyrus/Dropbox/Class/ML/project/data/batik/training%d.txt" % i, "/Users/cyrus/Dropbox/Class/ML/project/data/batik/test%d.txt" % i)
+
+corpus_fmt = "/Users/cyrus/Dropbox/Class/ML/project/data/ant/corpus2.txt"
+test_fmt = "/Users/cyrus/Dropbox/Class/ML/project/data/ant/test2.txt"
+
+import ngram; prob = ngram.test_expressions(corpus_fmt, test_fmt)
+
+corpus_fmt = "/Users/cyrus/Dropbox/Class/ML/project/data/batik/corpus%d.txt"
+test_fmt = "/Users/cyrus/Dropbox/Class/ML/project/data/batik/test%d.txt"
+
+import ngram; ngram.run_tests(10, corpus_fmt, test_fmt)
+
+run_tests()
+- generate training/test/corpus for all the files
+- run the ngram predictor on all the files
+- average all the cross-validation folds
+
+axion 0.0333449768082
+aoi 0.058308169860052002
+findbugs = 0.055
+antlr = 0.0311456748392
+ant = 0.048
+batik = 0.056
